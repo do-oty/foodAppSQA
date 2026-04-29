@@ -1,3 +1,4 @@
+import { FontAwesome } from '@expo/vector-icons';
 import { ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -24,7 +25,7 @@ export default function OrderAgainScreen() {
             <View className="h-28 rounded-2xl bg-violet-100" />
             <Text className="mt-3 font-inter-bold text-base text-violet-900">{item.title}</Text>
             <Text className="mt-1 font-inter-light text-sm text-violet-500">
-              ⭐ {item.rating}  •  Delivery {item.fee}  •  {item.promo}
+            <FontAwesome name="star" size={15} color="#FFD700" /> {item.rating}  •  Delivery {item.fee}  •  {item.promo} {item.rating}  •  Delivery {item.fee}  •  {item.promo}
             </Text>
           </View>
         ))}

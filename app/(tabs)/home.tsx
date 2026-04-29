@@ -275,7 +275,7 @@ export default function HomeTabScreen() {
               <Pressable
                 onPress={() => router.push('/order-again')}
                 className="h-10 w-10 items-center justify-center rounded-full bg-violet-600">
-                <Text className="font-inter-bold text-lg text-white">{'>'}</Text>
+                <FontAwesome name="angle-right" size={20} color="#FFFFFF" />
               </Pressable>
             </View>
 
@@ -285,7 +285,7 @@ export default function HomeTabScreen() {
                   <View className="h-28 rounded-2xl bg-violet-100" />
                   <Text className="mt-3 font-inter-bold text-base text-violet-900">{item.title}</Text>
                   <Text className="mt-1 font-inter-light text-sm text-violet-500">
-                    ⭐ {item.rating}  •  Delivery {item.fee}  •  {item.promo}
+                  <FontAwesome name="star" size={15} color="#FFD700" /> {item.rating}  •  Delivery {item.fee}  •  {item.promo}
                   </Text>
                 </View>
               ))}
@@ -299,7 +299,7 @@ export default function HomeTabScreen() {
               <Pressable
                 onPress={() => router.push('/order-again')}
                 className="h-10 w-10 items-center justify-center rounded-full bg-violet-600">
-                <Text className="font-inter-bold text-lg text-white">{'>'}</Text>
+                <FontAwesome name="angle-right" size={20} color="#FFFFFF" />
               </Pressable>
             </View>
 
@@ -309,7 +309,7 @@ export default function HomeTabScreen() {
                   <View className="h-28 rounded-2xl bg-violet-100" />
                   <Text className="mt-3 font-inter-bold text-base text-violet-900">{item.title}</Text>
                   <Text className="mt-1 font-inter-light text-sm text-violet-500">
-                    ⭐ {item.rating}  •  Delivery {item.fee}  •  {item.promo}
+                  <FontAwesome name="star" size={15} color="#FFD700" /> {item.rating}  •  Delivery {item.fee}  •  {item.promo}
                   </Text>
                 </View>
               ))}
