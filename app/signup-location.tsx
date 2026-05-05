@@ -39,6 +39,7 @@ export default function SignupLocationScreen() {
   const [gpsMarked, setGpsMarked] = useState(false);
   const [showProvinceOptions, setShowProvinceOptions] = useState(false);
   const [showCityOptions, setShowCityOptions] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({});
   const provinceList = sortedProvinces.map((p) => p.name);
   const provinceGrouped = buildGroupedByLetter(provinceList);
@@ -72,7 +73,14 @@ export default function SignupLocationScreen() {
         className="flex-1 bg-white"
         nestedScrollEnabled
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingTop: 20, paddingBottom: 28 }}>
+        contentContainerStyle={{ paddingTop: 8, paddingBottom: 28 }}>
+        
+        <View className="mb-2 flex-row items-center">
+          <Pressable onPress={() => router.back()} className="h-10 w-10 items-center justify-center rounded-full bg-gray-50">
+            <FontAwesome name="arrow-left" size={20} color="#9CA3AF" />
+          </Pressable>
+        </View>
+
         <Text className="mb-2 font-inter-bold text-3xl text-violet-900">Address</Text>
         <Text className="mb-5 font-inter-light text-sm text-violet-700">
           Add your location details before finishing setup.
@@ -241,10 +249,33 @@ export default function SignupLocationScreen() {
         </Pressable>
 
         <Button
-          label="Next"
-          onPress={() => {
+          label={isLoading ? 'Saving...' : 'Finish Setup'}
+          disabled={isLoading}
+          onPress={async () => {
             if (!validate()) return;
-            router.replace('/(tabs)/home');
+            setIsLoading(true);
+            try {
+              const { api } = require('../services/api');
+              await api.addAddress({
+                label: 'Home',
+                street_address: addressLine1 + (addressLine2 ? `, ${addressLine2}` : ''),
+                city: city,
+                state: province,
+                postal_code: zipCode,
+                is_default: true,
+              });
+              router.replace('/(tabs)/home');
+            } catch (err: any) {
+              console.error(err);
+              const { Alert } = require('react-native');
+              Alert.alert(
+                'Setup Partially Complete',
+                'Your account was created, but we couldn\'t save your address. You can add it later in settings.',
+                [{ text: 'Continue', onPress: () => router.replace('/(tabs)/home') }]
+              );
+            } finally {
+              setIsLoading(false);
+            }
           }}
         />
       </ScrollView>

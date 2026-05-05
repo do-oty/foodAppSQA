@@ -38,23 +38,16 @@ export default function RootLayout() {
         <Stack.Screen name="welcome" options={{ headerShown: false }} />
         <Stack.Screen name="auth" options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="signup" options={{ headerShown: false, gestureEnabled: false }} />
-        <Stack.Screen
-          name="signup-email"
-          options={{ title: '', headerBackButtonDisplayMode: 'minimal', headerShadowVisible: false, gestureEnabled: true }}
-        />
-        <Stack.Screen
-          name="signup-details"
-          options={{ title: '', headerBackButtonDisplayMode: 'minimal', headerShadowVisible: false, gestureEnabled: true }}
-        />
-        <Stack.Screen
-          name="signup-location"
-          options={{ title: '', headerBackButtonDisplayMode: 'minimal', headerShadowVisible: false, gestureEnabled: true }}
-        />
+        <Stack.Screen name="signup-email" options={{ headerShown: false, gestureEnabled: true }} />
+        <Stack.Screen name="signup-details" options={{ headerShown: false, gestureEnabled: true }} />
+        <Stack.Screen name="signup-location" options={{ headerShown: false, gestureEnabled: true }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false, gestureEnabled: false }} />
-        <Stack.Screen
-          name="order-again"
-          options={{ title: '', headerBackButtonDisplayMode: 'minimal', headerShadowVisible: false }}
-        />
+        <Stack.Screen name="order-again" options={{ headerShown: false }} />
+        <Stack.Screen name="restaurant/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="checkout" options={{ headerShown: false }} />
+        <Stack.Screen name="orders" options={{ headerShown: false }} />
+        <Stack.Screen name="addresses" options={{ headerShown: false }} />
+        <Stack.Screen name="cart" options={{ headerShown: false, presentation: 'modal', gestureEnabled: true }} />
       </Stack>
       <StatusBar style="dark" />
     </ThemeProvider>

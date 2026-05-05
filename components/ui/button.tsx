@@ -4,6 +4,7 @@ type ButtonProps = {
   label: string;
   onPress?: () => void;
   variant?: 'primary' | 'secondary';
+  disabled?: boolean;
 };
 
 export function Button({ label, onPress, variant = 'primary' }: ButtonProps) {

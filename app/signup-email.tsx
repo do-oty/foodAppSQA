@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Text, TextInput, Vibration, View } from 'react-native';
+import { Pressable, Text, TextInput, Vibration, View } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 
 import { Button } from '@/components/ui/button';
@@ -26,7 +26,12 @@ export default function SignupEmailScreen() {
 
   return (
     <Screen>
-      <View className="flex-1 bg-white pt-6">
+      <View className="flex-1 bg-white pt-2">
+        <View className="mb-4 flex-row items-center">
+          <Pressable onPress={() => router.back()} className="h-10 w-10 items-center justify-center rounded-full bg-gray-50">
+            <FontAwesome name="arrow-left" size={20} color="#9CA3AF" />
+          </Pressable>
+        </View>
         <Text className="mb-2 font-inter-bold text-3xl text-violet-900">Your email</Text>
         <Text className="mb-5 font-inter-light text-sm text-violet-700">
           We check if an account exists. New users continue to sign up.
