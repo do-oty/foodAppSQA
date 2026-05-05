@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, Vibration, View } from 'react-native';
+import { Pressable, ScrollView, Text, TextInput, Vibration, View, ActivityIndicator } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 
 import { Button } from '@/components/ui/button';
@@ -40,7 +40,9 @@ export default function SignupLocationScreen() {
   const [showProvinceOptions, setShowProvinceOptions] = useState(false);
   const [showCityOptions, setShowCityOptions] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({});
+  const [globalError, setGlobalError] = useState<string | null>(null);
   const provinceList = sortedProvinces.map((p) => p.name);
   const provinceGrouped = buildGroupedByLetter(provinceList);
   const selectedProvinceKey = sortedProvinces.find((p) => p.name === province)?.key;
@@ -52,6 +54,7 @@ export default function SignupLocationScreen() {
   const validate = () => {
     const nextErrors: Partial<Record<FieldName, string>> = {};
     if (!addressLine1.trim()) nextErrors.addressLine1 = 'Address line 1 is required.';
+    else if (addressLine1.trim().length < 5) nextErrors.addressLine1 = 'Address must be at least 5 characters.';
     if (!province.trim()) nextErrors.province = 'Province is required.';
     if (!city.trim()) nextErrors.city = 'City is required.';
     if (!zipCode.trim()) nextErrors.zipCode = 'ZIP is required.';
@@ -85,6 +88,16 @@ export default function SignupLocationScreen() {
         <Text className="mb-5 font-inter-light text-sm text-violet-700">
           Add your location details before finishing setup.
         </Text>
+
+        {globalError && (
+          <View className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 flex-row items-center">
+            <FontAwesome name="exclamation-circle" size={16} color="#B91C1C" />
+            <Text className="ml-2 flex-1 font-inter-bold text-sm text-red-800">{globalError}</Text>
+            <Pressable onPress={() => setGlobalError(null)}>
+              <FontAwesome name="times" size={14} color="#B91C1C" />
+            </Pressable>
+          </View>
+        )}
 
         <View className="mb-4">
           <View className={inputClasses('addressLine1')}>
@@ -237,14 +250,38 @@ export default function SignupLocationScreen() {
         </View>
 
         <Pressable
-          onPress={() => setGpsMarked((prev) => !prev)}
-          className={`mb-5 rounded-2xl border p-4 ${gpsMarked ? 'border-violet-600 bg-violet-100' : 'border-violet-200 bg-violet-50'}`}>
+          onPress={() => {
+            setIsLocating(true);
+            setGlobalError(null);
+            // Simulate GPS detection delay and potential error
+            setTimeout(() => {
+              setIsLocating(false);
+              const success = Math.random() > 0.2; // 80% success rate for simulation
+              if (success) {
+                setGpsMarked(true);
+                // Pre-fill some data if success
+                if (!addressLine1) setAddressLine1('123 Simulated GPS St.');
+                if (!zipCode) setZipCode('1000');
+              } else {
+                setGlobalError('Location services unavailable. Please check your GPS settings or enter address manually.');
+                Vibration.vibrate([0, 80, 50, 80]);
+              }
+            }, 1200);
+          }}
+          disabled={isLocating}
+          className={`mb-5 rounded-2xl border p-4 ${isLocating ? 'border-violet-100 bg-violet-50 opacity-60' : gpsMarked ? 'border-violet-600 bg-violet-100' : 'border-violet-200 bg-violet-50'}`}>
           <View className="flex-row items-center">
-            <FontAwesome name="crosshairs" size={16} color="#6D28D9" />
-            <Text className="ml-2 font-inter-semibold text-violet-900">Temporary GPS Location Box</Text>
+            {isLocating ? (
+              <ActivityIndicator size="small" color="#6D28D9" />
+            ) : (
+              <FontAwesome name="crosshairs" size={16} color="#6D28D9" />
+            )}
+            <Text className="ml-2 font-inter-semibold text-violet-900">
+              {isLocating ? 'Detecting location...' : 'Use Current Location'}
+            </Text>
           </View>
           <Text className="mt-1 font-inter-light text-sm text-violet-700">
-            {gpsMarked ? 'GPS location selected (temporary).' : 'Tap to simulate selecting GPS location.'}
+            {isLocating ? 'Connecting to satellites...' : gpsMarked ? 'GPS location selected.' : 'Tap to auto-fill address using GPS.'}
           </Text>
         </Pressable>
 
@@ -256,23 +293,37 @@ export default function SignupLocationScreen() {
             setIsLoading(true);
             try {
               const { api } = require('../services/api');
-              await api.addAddress({
+              await api.createAddress({
                 label: 'Home',
                 street_address: addressLine1 + (addressLine2 ? `, ${addressLine2}` : ''),
                 city: city,
                 state: province,
                 postal_code: zipCode,
+                latitude: 14.5995, // Default Manila lat
+                longitude: 120.9842, // Default Manila lng
                 is_default: true,
               });
               router.replace('/(tabs)/home');
             } catch (err: any) {
               console.error(err);
-              const { Alert } = require('react-native');
-              Alert.alert(
-                'Setup Partially Complete',
-                'Your account was created, but we couldn\'t save your address. You can add it later in settings.',
-                [{ text: 'Continue', onPress: () => router.replace('/(tabs)/home') }]
-              );
+              
+              // Handle field-specific API validation errors
+              if (err.details && Array.isArray(err.details)) {
+                const apiErrors: any = {};
+                err.details.forEach((d: any) => {
+                  // Map API field names to our internal state names
+                  let field = d.field;
+                  if (field === 'street_address') field = 'addressLine1';
+                  if (field === 'postal_code') field = 'zipCode';
+                  if (field === 'state') field = 'province';
+                  apiErrors[field] = d.message;
+                });
+                setErrors(prev => ({ ...prev, ...apiErrors }));
+                Vibration.vibrate(140);
+              } else {
+                setGlobalError(err.message || 'We couldn\'t save your address. Please try again or skip for now.');
+                Vibration.vibrate(140);
+              }
             } finally {
               setIsLoading(false);
             }

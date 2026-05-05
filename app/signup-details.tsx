@@ -13,7 +13,7 @@ type FieldName = 'firstName' | 'lastName' | 'email' | 'password' | 'confirmPassw
 function getPasswordStrength(pw: string): { score: number; label: string; color: string } {
   if (!pw) return { score: 0, label: '', color: '#E5E7EB' };
   let score = 0;
-  if (pw.length >= 6) score++;
+  if (pw.length >= 8) score++;
   if (pw.length >= 10) score++;
   if (/[A-Z]/.test(pw)) score++;
   if (/[0-9]/.test(pw)) score++;
@@ -66,7 +66,7 @@ export default function SignupDetailsScreen() {
 
   // Password requirement checks
   const pwReqs = {
-    length: password.length >= 6,
+    length: password.length >= 8,
     upper: /[A-Z]/.test(password),
     number: /[0-9]/.test(password),
     match: !!password && password === confirmPassword,
@@ -101,7 +101,7 @@ export default function SignupDetailsScreen() {
     if (!lastName.trim()) nextErrors.lastName = 'Last name is required.';
     if (!email.trim() || !isEmailValid(email.trim())) nextErrors.email = 'Enter a valid email address.';
     if (!password) nextErrors.password = 'Password is required.';
-    else if (password.length < 6) nextErrors.password = 'Must be at least 6 characters.';
+    else if (password.length < 8) nextErrors.password = 'Must be at least 8 characters.';
     if (!confirmPassword) nextErrors.confirmPassword = 'Please confirm your password.';
     else if (password !== confirmPassword) nextErrors.confirmPassword = 'Passwords do not match.';
     setErrors(nextErrors);
@@ -271,7 +271,7 @@ export default function SignupDetailsScreen() {
                 autoHidePassword();
               }}
               onBlur={() => touch('password')}
-              placeholder="Min. 6 characters"
+              placeholder="Min. 8 characters"
               placeholderTextColor="#A78BFA"
               secureTextEntry={false}
               className="ml-3 flex-1 font-inter text-[17px] text-violet-950"
@@ -306,7 +306,7 @@ export default function SignupDetailsScreen() {
           {/* Requirements checklist */}
           {(touched.password || password.length > 0) && (
             <View className="mt-2 rounded-xl border border-violet-100 bg-violet-50 px-3 py-2.5" style={{ gap: 3 }}>
-              <Req met={pwReqs.length} label="At least 6 characters" />
+              <Req met={pwReqs.length} label="At least 8 characters" />
               <Req met={pwReqs.upper} label="One uppercase letter (recommended)" />
               <Req met={pwReqs.number} label="One number (recommended)" />
             </View>
@@ -390,7 +390,19 @@ export default function SignupDetailsScreen() {
               router.push('/signup-location');
             } catch (err: any) {
               const msg = err?.message?.toLowerCase() || '';
-              if (msg.includes('already registered') || msg.includes('already exists')) {
+              
+              // Handle field-specific API validation errors
+              if (err.details && Array.isArray(err.details)) {
+                const apiErrors: any = {};
+                err.details.forEach((d: any) => {
+                  let field = d.field;
+                  // API fields like full_name or phone might need mapping if we split them
+                  apiErrors[field] = d.message;
+                });
+                setErrors(prev => ({ ...prev, ...apiErrors }));
+                setTouched({ firstName: true, lastName: true, email: true, password: true, confirmPassword: true });
+                Vibration.vibrate(140);
+              } else if (msg.includes('already registered') || msg.includes('already exists')) {
                 setGlobalError('This email is already registered. Please log in instead.');
               } else {
                 setGlobalError(err?.message || 'Failed to create account.');

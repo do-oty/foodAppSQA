@@ -178,8 +178,11 @@ class FoodApiClient {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error(`API Error Details [${response.status}]:`, errorData);
-        throw new Error(errorData.message || `API Error: ${response.status}`);
+        console.error(`API Error Details [${response.status}]:`, JSON.stringify(errorData, null, 2));
+        const err = new Error(errorData.error || errorData.message || `API Error: ${response.status}`);
+        (err as any).details = errorData.details;
+        (err as any).status = response.status;
+        throw err;
       }
 
       return response.json();
