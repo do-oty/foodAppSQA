@@ -8,10 +8,27 @@ import '../global.css';
 import { AlertProvider } from '../components/ui/custom-alert';
 import { useEffect } from 'react';
 import { registerForPushNotificationsAsync } from '../services/notifications';
+import { api } from '../services/api';
 
 export default function RootLayout() {
   useEffect(() => {
     registerForPushNotificationsAsync();
+    
+    // Pre-warm the API to mitigate cold starts (Vercel/Supabase)
+    // This wakes up the server as soon as the app is launched
+    api.getCategories().catch(() => {});
+    api.getRestaurants({ limit: 1 }).catch(() => {});
+
+    // Keep-alive loop: Pings the server every 5 minutes while the app is open
+    // to prevent it from going back to sleep
+    const interval = setInterval(() => {
+      console.log('[API] Periodic keep-alive ping...');
+      api.getCategories().catch(() => {});
+    }, 5 * 60 * 1000);
+
+    return () => {
+      clearInterval(interval);
+    };
   }, []);
   const [fontsLoaded] = useFonts({
     Inter_300Light,

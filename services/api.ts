@@ -162,7 +162,7 @@ class FoodApiClient {
     await this.clearToken();
   }
 
-  private async request<T>(endpoint: string, options: any = {}, retries = 2): Promise<T> {
+  private async request<T>(endpoint: string, options: any = {}, retries = 3): Promise<T> {
     const isFormData = options.body instanceof FormData;
     const url = `${API_BASE_URL}${endpoint}`;
     const headers: Record<string, string> = isFormData ? {} : { 'Content-Type': 'application/json' };
@@ -172,7 +172,7 @@ class FoodApiClient {
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+    const timeout = setTimeout(() => controller.abort(), 35000); // Keep the slightly longer timeout
 
     try {
       const response = await fetch(url, {
@@ -188,8 +188,10 @@ class FoodApiClient {
 
       if (!response.ok) {
         if (retries > 0 && (response.status >= 500 || response.status === 408)) {
-          console.log(`[API] Server error ${response.status}, retrying ${endpoint}... (${retries} left)`);
-          await new Promise(r => setTimeout(r, 800));
+          // Linear backoff: 1s, 2s, 3s
+          const delay = (3 - retries + 1) * 1000;
+          console.log(`[API] Server error ${response.status}, retrying ${endpoint} in ${delay}ms... (${retries} left)`);
+          await new Promise(r => setTimeout(r, delay));
           return this.request<T>(endpoint, options, retries - 1);
         }
         const errorData = await response.json().catch(() => ({}));
@@ -200,12 +202,32 @@ class FoodApiClient {
         throw err;
       }
 
-      return response.json();
+      const result = await response.json();
+
+      // Special handling for cold-starts/lazy-loading:
+      // If the API returns success but with an empty data array and total=0 for a list endpoint,
+      // it's likely the database hasn't fully connected yet. We retry up to 3 times.
+      const isListEndpoint = endpoint.includes('/restaurants') || endpoint.includes('/categories') || endpoint.includes('/menu');
+      const isEmptyButShouldntBe = result.success && 
+                                   Array.isArray(result.data) && 
+                                   result.data.length === 0 && 
+                                   result.meta?.total === 0;
+
+      if (isEmptyButShouldntBe && isListEndpoint && retries > 0) {
+        // Linear backoff: 1s, 2s, 3s
+        const delay = (3 - retries + 1) * 1000;
+        console.log(`[API] Received empty result for ${endpoint}, server might still be waking up. Retrying in ${delay}ms... (${retries} left)`);
+        await new Promise(r => setTimeout(r, delay));
+        return this.request<T>(endpoint, options, retries - 1);
+      }
+
+      return result;
     } catch (err: any) {
       clearTimeout(timeout);
       if (retries > 0 && err?.name !== 'AbortError') {
-        console.log(`[API] Request failed, retrying ${endpoint}... (${retries} left)`);
-        await new Promise(r => setTimeout(r, 800));
+        const delay = (3 - retries + 1) * 1000;
+        console.log(`[API] Request failed (${err.message}), retrying ${endpoint} in ${delay}ms... (${retries} left)`);
+        await new Promise(r => setTimeout(r, delay));
         return this.request<T>(endpoint, options, retries - 1);
       }
       if (err?.name === 'AbortError') {
