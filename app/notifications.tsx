@@ -43,7 +43,7 @@ export default function NotificationsScreen() {
           onPress={() => router.back()} 
           className="h-10 w-10 items-center justify-center rounded-full bg-violet-50"
         >
-          <FontAwesome name="arrow-left" size={16} color="#7C3AED" />
+          <FontAwesome name="arrow-left" size={18} color="#7C3AED" />
         </Pressable>
         <View className="ml-4 flex-1 flex-row items-center">
           <Text className="font-inter-bold text-xl text-violet-900">Notifications</Text>
@@ -74,6 +74,25 @@ export default function NotificationsScreen() {
             </View>
           </View>
         ))}
+
+        {/* Debug Section */}
+        <View className="mt-8 mb-12">
+          <Text className="mb-4 font-inter-bold text-sm text-violet-400 uppercase tracking-widest text-center">Developer Tools</Text>
+          <Pressable 
+            onPress={() => {
+              const { sendLocalNotification } = require('../services/notifications');
+              sendLocalNotification('Exclusive Offer! 🍕', 'Get 50% OFF your next order with code FOOD50. Limited time only!');
+            }}
+            className="rounded-2xl border border-dashed border-green-300 bg-green-50 p-6 items-center">
+            <View className="h-12 w-12 items-center justify-center rounded-full bg-green-100 mb-3">
+              <FontAwesome name="gift" size={20} color="#059669" />
+            </View>
+            <Text className="font-inter-bold text-green-700">Simulate Promo Notification</Text>
+            <Text className="mt-1 text-center font-inter-light text-xs text-green-600">
+              Trigger a system-level alert to test foreground/background banners.
+            </Text>
+          </Pressable>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );

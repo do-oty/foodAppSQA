@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Dimensions, Modal, PanResponder, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { useCallback } from 'react';
 import { api, ApiCategory, ApiRestaurant, extractArray, ApiAddress } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
@@ -480,18 +481,40 @@ export default function HomeTabScreen() {
     return () => { isActive = false; };
   }, []);
 
+  const isFetchingRef = useRef(false);
+
   const fetchMainMenuItems = useCallback(async () => {
+    if (isFetchingRef.current) {
+      console.log('[HOME] fetchMainMenuItems already in progress, skipping');
+      return;
+    }
+    isFetchingRef.current = true;
     console.log('[HOME] fetchMainMenuItems START');
-    setIsLoadingMainMenu(true);
+    
+    // Only show skeleton if we have NO data yet
+    const isFirstLoad = mainMenuItems.length === 0;
+    if (isFirstLoad) {
+      setIsLoadingMainMenu(true);
+    }
+    
     setMainMenuError(null);
     try {
       const result = await api.getRestaurants();
       const newRestaurants = extractArray(result);
+      console.log('[HOME] Restaurants fetched:', newRestaurants.length);
+      
       if (newRestaurants.length === 0) {
-        setMainMenuItems([]);
-        setRestaurants([]);
+        console.log('[HOME] No restaurants found in API response');
+        // Only clear state if it's the first load. Otherwise, keep old data (flaky API protection)
+        if (isFirstLoad) {
+          setMainMenuItems([]);
+          setRestaurants([]);
+        } else {
+          console.log('[HOME] Preserving existing data due to empty response');
+        }
         return;
       }
+      
       const menuRequests = newRestaurants.map(r =>
         api.getMenu(r.id).then(m => {
           const items = extractArray(m);
@@ -499,62 +522,109 @@ export default function HomeTabScreen() {
             ...i,
             restaurant_id: r.id,
             restaurant_name: r.name,
-            restaurant_rating: r.average_rating,
+            restaurant_rating: r.average_rating || r.rating,
             delivery_fee: r.delivery_fee
           }));
-        }).catch(() => [])
+        }).catch(err => {
+          console.error(`[HOME] Failed to fetch menu for restaurant ${r.id}:`, err);
+          return [];
+        })
       );
+      
       const menuResults = await Promise.all(menuRequests);
       const newItems = menuResults.flat().filter(i => i.is_available !== false);
+      console.log('[HOME] Total menu items fetched:', newItems.length);
+      
       setMainMenuItems(newItems);
       setRestaurants(newRestaurants);
     } catch (err: any) {
-      setMainMenuError('Could not load menu. Pull down to retry.');
+      console.error('[HOME] fetchMainMenuItems ERROR:', err);
+      if (isFirstLoad) {
+        setMainMenuError('Could not load menu. Pull down to retry.');
+      }
     } finally {
+      isFetchingRef.current = false;
       setIsLoadingMainMenu(false);
       setIsLoadingMoreFood(false);
       setRefreshing(false);
+      console.log('[HOME] fetchMainMenuItems FINISHED');
     }
-  }, []);
+  }, [mainMenuItems.length, mainMenuError]);
+
+  // 3. Main Data Fetching
+  const isFocused = useIsFocused();
+  const [focusCount, setFocusCount] = useState(0);
 
   useEffect(() => {
-    fetchMainMenuItems();
-  }, [refreshTrigger, fetchMainMenuItems]);
+    if (isFocused) {
+      setFocusCount(prev => prev + 1);
+    }
+  }, [isFocused]);
+
+  useEffect(() => {
+    // This will run on mount (focusCount 1) and every subsequent focus
+    if (focusCount > 0) {
+      console.log('[HOME] Focus detected, triggering fetch. Count:', focusCount);
+      fetchMainMenuItems();
+    }
+  }, [focusCount, refreshTrigger, fetchMainMenuItems]);
 
   useEffect(() => {
     setVisibleFoodCount(6);
   }, [activeTag, searchQuery, selectedFilter, selectedOffer, selectedSort, mainMenuItems.length]);
 
   const filteredMenuItems = useMemo(() => {
-    if (!activeTag || activeTag === 'All') return mainMenuItems;
+    if (!mainMenuItems.length) return [];
+    if (!activeTag || activeTag === 'all' || activeTag === 'All') return mainMenuItems;
+    
     const tag = activeTag.toLowerCase();
     const tagId = apiTags.find(t => t.name.toLowerCase() === tag)?.id;
-    return mainMenuItems.filter(item => {
+    
+    const filtered = mainMenuItems.filter(item => {
       const catName = (item.category_name || '').toLowerCase();
       const name = (item.name || '').toLowerCase();
-      return catName.includes(tag) || (tagId && (item as any).category_id === tagId) || name.includes(tag);
+      const catIdMatch = tagId && String((item as any).category_id) === String(tagId);
+      return catName.includes(tag) || catIdMatch || name.includes(tag);
     });
+
+    // Fallback: If tag is selected but no items found, show all (avoids blank screen)
+    if (filtered.length === 0) return mainMenuItems;
+    return filtered;
   }, [mainMenuItems, activeTag, apiTags]);
 
   const filteredRestaurants = useMemo(() => {
-    if (!activeTag || activeTag === 'All') return restaurants.slice(0, 8);
+    if (!restaurants.length) return [];
+    if (!activeTag || activeTag === 'all' || activeTag === 'All') return restaurants.slice(0, 8);
+    
     const tag = activeTag.toLowerCase();
-    return restaurants.filter(r => {
+    const filtered = restaurants.filter(r => {
       const cuisines = (r.cuisine_type || []).map(c => c.toLowerCase());
       const name = (r.name || '').toLowerCase();
       return cuisines.some(c => c.includes(tag)) || name.includes(tag);
-    }).slice(0, 8);
+    });
+
+    if (filtered.length === 0) return restaurants.slice(0, 8);
+    return filtered.slice(0, 8);
   }, [restaurants, activeTag]);
 
   const orderAgainItems = useMemo(() => {
-    return [...filteredMenuItems].sort((a, b) => (b.restaurant_rating ?? 0) - (a.restaurant_rating ?? 0)).slice(0, 6);
+    const sorted = [...filteredMenuItems].sort((a, b) => (b.restaurant_rating ?? 0) - (a.restaurant_rating ?? 0)).slice(0, 6);
+    console.log('[HOME-RENDER] filteredMenuItems count:', filteredMenuItems.length);
+    console.log('[HOME-RENDER] orderAgainItems count:', sorted.length);
+    return sorted;
   }, [filteredMenuItems]);
 
   const discoverMoreItems = useMemo(() => {
-    return [...filteredMenuItems].sort((a, b) => (a.delivery_fee ?? 0) - (b.delivery_fee ?? 0)).slice(0, 6);
+    const items = [...filteredMenuItems].sort(() => 0.5 - Math.random()).slice(0, 6);
+    console.log('[HOME-RENDER] discoverMoreItems count:', items.length);
+    return items;
   }, [filteredMenuItems]);
 
-  const visibleFoodItems = useMemo(() => filteredMenuItems.slice(0, visibleFoodCount), [filteredMenuItems, visibleFoodCount]);
+  const visibleFoodItems = useMemo(() => {
+    const items = filteredMenuItems.slice(0, visibleFoodCount);
+    console.log('[HOME-RENDER] visibleFoodItems count:', items.length);
+    return items;
+  }, [filteredMenuItems, visibleFoodCount]);
 
   const scrollViewRef = useRef<any>(null);
   const [showTopButton, setShowTopButton] = useState(false);

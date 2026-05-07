@@ -125,8 +125,17 @@ class FoodApiClient {
   private token: string | null = null;
 
   async loadToken() {
-    // In a real app, this might load from AsyncStorage
-    // For now, we'll just keep it in memory
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    try {
+      const stored = await AsyncStorage.getItem('auth_token');
+      if (stored) {
+        let clean = stored;
+        if (clean.startsWith('"') && clean.endsWith('"')) clean = clean.slice(1, -1);
+        this.token = clean;
+      }
+    } catch (err) {
+      console.error('Failed to load token:', err);
+    }
   }
 
   getToken() {
@@ -139,10 +148,14 @@ class FoodApiClient {
       cleanToken = cleanToken.slice(1, -1);
     }
     this.token = cleanToken;
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    AsyncStorage.setItem('auth_token', cleanToken).catch(err => console.error('Failed to save token:', err));
   }
 
   async clearToken() {
     this.token = null;
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    await AsyncStorage.removeItem('auth_token');
   }
 
   async logout() {
@@ -246,12 +259,12 @@ class FoodApiClient {
     if (params?.limit != null) query.set('limit', String(params.limit));
 
     const qs = query.toString();
-    return this.request<ApiRestaurant[]>(`/restaurants${qs ? `?${qs}` : ''}`, { skipAuth: true });
+    return this.request<ApiRestaurant[]>(`/restaurants${qs ? `?${qs}` : ''}`);
   }
 
   async getRestaurant(id?: string): Promise<ApiResponse<ApiRestaurant>> {
     if (!id) throw new Error('Restaurant ID is required');
-    return this.request<ApiRestaurant>(`/restaurants/${id}`, { skipAuth: true });
+    return this.request<ApiRestaurant>(`/restaurants/${id}`);
   }
 
   async createRestaurant(data: Partial<ApiRestaurant>): Promise<ApiResponse<ApiRestaurant>> {
@@ -275,13 +288,13 @@ class FoodApiClient {
     if (params?.available != null) query.set('available', String(params.available));
 
     const qs = query.toString();
-    return this.request<ApiMenuItem[]>(`/restaurants/${restaurantId}/menu${qs ? `?${qs}` : ''}`, { skipAuth: true });
+    return this.request<ApiMenuItem[]>(`/restaurants/${restaurantId}/menu${qs ? `?${qs}` : ''}`);
   }
 
   // ── Categories ────────────────────────────────────────────────────────────
 
   async getCategories(): Promise<ApiResponse<ApiCategory[]>> {
-    return this.request<ApiCategory[]>('/categories', { skipAuth: true });
+    return this.request<ApiCategory[]>('/categories');
   }
 
   // ── Cart (Simulated via AsyncStorage for robustness) ───────────

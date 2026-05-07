@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../../services/api';
 import { useAlert } from '../../components/ui/custom-alert';
+import { sendLocalNotification } from '../../services/notifications';
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
@@ -18,7 +19,6 @@ export default function TabsLayout() {
       const order = await AsyncStorage.getItem('active_tracking_order');
       if (order) setActiveOrder(JSON.parse(order));
       
-      // Initialize unread count for demo if not set
       const notifs = await AsyncStorage.getItem('unread_notifs');
       if (notifs === null) await AsyncStorage.setItem('unread_notifs', '1');
     };
@@ -31,9 +31,20 @@ export default function TabsLayout() {
     if (!activeOrder) return;
     
     let nextStatus = 'pending';
-    if (activeOrder.status === 'pending') nextStatus = 'preparing';
-    else if (activeOrder.status === 'preparing') nextStatus = 'delivered';
-    else nextStatus = 'delivered';
+    let notifTitle = '';
+    let notifBody = '';
+
+    if (activeOrder.status === 'pending') {
+      nextStatus = 'preparing';
+      notifTitle = 'Cooking Started! 👨‍🍳';
+      notifBody = 'The restaurant is now preparing your delicious meal.';
+    } else if (activeOrder.status === 'preparing') {
+      nextStatus = 'delivered';
+      notifTitle = 'Order Delivered! 🛵';
+      notifBody = 'Your food has arrived at your doorstep. Enjoy!';
+    } else {
+      nextStatus = 'delivered';
+    }
 
     const updatedOrder = { ...activeOrder, status: nextStatus };
     
@@ -41,18 +52,16 @@ export default function TabsLayout() {
       const prevOrders = JSON.parse(await AsyncStorage.getItem('user_orders') || '[]');
       const updatedOrders = prevOrders.map((o: any) => o.id === activeOrder.id ? updatedOrder : o);
       await AsyncStorage.setItem('user_orders', JSON.stringify(updatedOrders));
-      
       await AsyncStorage.removeItem('active_tracking_order');
       setActiveOrder(null);
       setShowTracker(false);
-      showAlert({ 
-        title: 'Delivered!', 
-        message: 'Your order has arrived. Enjoy your meal!', 
-        type: 'success' 
-      });
+      
+      showAlert({ title: 'Delivered!', message: 'Your order has arrived.', type: 'success' });
+      await sendLocalNotification(notifTitle, notifBody);
     } else {
       await AsyncStorage.setItem('active_tracking_order', JSON.stringify(updatedOrder));
       setActiveOrder(updatedOrder);
+      await sendLocalNotification(notifTitle, notifBody);
     }
   };
 
@@ -101,7 +110,7 @@ export default function TabsLayout() {
       {activeOrder && (
         <Pressable 
           onPress={() => setShowTracker(true)}
-          style={{ position: 'absolute', bottom: 76, right: 16 }}
+          style={{ position: 'absolute', bottom: 90, right: 16 }}
           className="h-14 w-14 items-center justify-center rounded-full bg-violet-600 shadow-lg shadow-violet-900/30">
           <FontAwesome name="motorcycle" size={24} color="white" />
           <View className="absolute -top-1 -right-1 h-4 w-4 items-center justify-center rounded-full bg-red-500">
@@ -157,6 +166,13 @@ export default function TabsLayout() {
                   <FontAwesome name="bug" size={16} color="#7C3AED" />
                   <Text className="mt-2 font-inter-bold text-violet-600">Debug: Advance Order Status</Text>
                   <Text className="mt-1 text-center font-inter-light text-xs text-violet-400">Current Status: {activeOrder?.status}</Text>
+                </Pressable>
+
+                <Pressable 
+                  onPress={() => sendLocalNotification('Exclusive Offer! 🍕', 'Get 50% OFF your next order with code FOOD50. Limited time only!')}
+                  className="mt-3 rounded-xl border border-dashed border-green-300 bg-green-50 p-4 items-center">
+                  <FontAwesome name="gift" size={16} color="#059669" />
+                  <Text className="mt-2 font-inter-bold text-green-600">Debug: Simulate Promo Notification</Text>
                 </Pressable>
               </View>
             </ScrollView>
