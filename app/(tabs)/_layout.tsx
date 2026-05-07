@@ -1,19 +1,26 @@
 import { Tabs } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { View, Pressable, Text, Modal, Animated, ScrollView, Alert } from 'react-native';
+import { View, Pressable, Text, Modal, Animated, ScrollView } from 'react-native';
 import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api } from '../../services/api';
+import { useAlert } from '../../components/ui/custom-alert';
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const [activeOrder, setActiveOrder] = useState<any>(null);
   const [showTracker, setShowTracker] = useState(false);
+  const { showAlert } = useAlert();
 
   useEffect(() => {
     const checkOrder = async () => {
       const order = await AsyncStorage.getItem('active_tracking_order');
       if (order) setActiveOrder(JSON.parse(order));
+      
+      // Initialize unread count for demo if not set
+      const notifs = await AsyncStorage.getItem('unread_notifs');
+      if (notifs === null) await AsyncStorage.setItem('unread_notifs', '1');
     };
     checkOrder();
     const interval = setInterval(checkOrder, 3000);
@@ -31,7 +38,6 @@ export default function TabsLayout() {
     const updatedOrder = { ...activeOrder, status: nextStatus };
     
     if (nextStatus === 'delivered') {
-      // Update in history
       const prevOrders = JSON.parse(await AsyncStorage.getItem('user_orders') || '[]');
       const updatedOrders = prevOrders.map((o: any) => o.id === activeOrder.id ? updatedOrder : o);
       await AsyncStorage.setItem('user_orders', JSON.stringify(updatedOrders));
@@ -39,12 +45,28 @@ export default function TabsLayout() {
       await AsyncStorage.removeItem('active_tracking_order');
       setActiveOrder(null);
       setShowTracker(false);
-      Alert.alert('Delivered!', 'Your fake order has arrived.');
+      showAlert({ 
+        title: 'Delivered!', 
+        message: 'Your order has arrived. Enjoy your meal!', 
+        type: 'success' 
+      });
     } else {
       await AsyncStorage.setItem('active_tracking_order', JSON.stringify(updatedOrder));
       setActiveOrder(updatedOrder);
     }
   };
+
+  const [unreadNotifs, setUnreadNotifs] = useState(0);
+
+  useEffect(() => {
+    const checkUnread = async () => {
+      const val = await AsyncStorage.getItem('unread_notifs');
+      setUnreadNotifs(val === '0' ? 0 : 1); // For demo, we just show a badge if there's unread
+    };
+    checkUnread();
+    const interval = setInterval(checkUnread, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <View className="flex-1">
@@ -64,7 +86,15 @@ export default function TabsLayout() {
         <Tabs.Screen name="home" options={{ title: 'Food', tabBarIcon: ({ color, size }) => <FontAwesome name="cutlery" size={size} color={color} /> }} />
         <Tabs.Screen name="search" options={{ title: 'Search', tabBarIcon: ({ color, size }) => <FontAwesome name="search" size={size} color={color} /> }} />
         <Tabs.Screen name="favorites" options={{ title: 'Favorites', tabBarIcon: ({ color, size }) => <FontAwesome name="heart-o" size={size} color={color} /> }} />
-        <Tabs.Screen name="account" options={{ title: 'Account', tabBarIcon: ({ color, size }) => <FontAwesome name="user-o" size={size} color={color} /> }} />
+        <Tabs.Screen 
+          name="account" 
+          options={{ 
+            title: 'Account', 
+            tabBarIcon: ({ color, size }) => <FontAwesome name="user-o" size={size} color={color} />,
+            tabBarBadge: unreadNotifs > 0 ? unreadNotifs : undefined,
+            tabBarBadgeStyle: { backgroundColor: '#7C3AED', fontSize: 10 }
+          }} 
+        />
       </Tabs>
 
       {/* Floating Tracker Button */}

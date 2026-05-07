@@ -5,6 +5,7 @@ import { ActivityIndicator, Alert, Animated, Pressable, ScrollView, Text, TextIn
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api, ApiCartItem, ApiAddress, extractArray } from '../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAlert } from '../components/ui/custom-alert';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -21,6 +22,7 @@ export default function CheckoutScreen() {
   const [addressId, setAddressId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const { showAlert } = useAlert();
   
   // Modals & Sheets
   const [showAddressSheet, setShowAddressSheet] = useState(false);
@@ -42,7 +44,7 @@ export default function CheckoutScreen() {
         const defaultAddr = addrs.find((a: any) => a.is_default) || addrs[0];
         if (defaultAddr) setAddressId(defaultAddr.id);
       } catch (err) {
-        Alert.alert('Error', 'Could not load checkout details.');
+        showAlert({ title: 'Error', message: 'Could not load checkout details.', type: 'error' });
       } finally {
         setIsLoading(false);
       }
@@ -58,16 +60,16 @@ export default function CheckoutScreen() {
   const handleApplyPromo = () => {
     if (promoCode.toUpperCase() === 'PROMO10') {
       setPromoApplied(true);
-      Alert.alert('Success', '10% discount applied!');
+      showAlert({ title: 'Success', message: '10% discount applied!', type: 'success' });
     } else {
       setPromoApplied(false);
-      Alert.alert('Invalid', 'Promo code not found or expired.');
+      showAlert({ title: 'Invalid', message: 'Promo code not found or expired.', type: 'warning' });
     }
   };
 
   const handlePlaceOrder = async () => {
     if (!addressId) {
-      Alert.alert('Address Required', 'Please set a delivery address.');
+      showAlert({ title: 'Address Required', message: 'Please set a delivery address.', type: 'warning' });
       return;
     }
     if (items.length === 0) return;
@@ -92,11 +94,15 @@ export default function CheckoutScreen() {
 
       await Promise.all(items.map(i => api.removeFromCart(i.id || i.menu_item_id || '').catch(() => {})));
 
-      Alert.alert('Order Placed!', 'Your food is on the way!', [
-        { text: 'Track Order', onPress: () => { router.dismissAll(); router.replace('/(tabs)/home'); } } 
-      ]);
+      showAlert({ 
+        title: 'Order Placed!', 
+        message: 'Your food is on the way!', 
+        type: 'success',
+        confirmText: 'Track Order',
+        onConfirm: () => { router.dismissAll(); router.replace('/(tabs)/home'); }
+      });
     } catch (err: any) {
-      Alert.alert('Checkout Failed', err?.message || 'Could not place order.');
+      showAlert({ title: 'Checkout Failed', message: err?.message || 'Could not place order.', type: 'error' });
     } finally {
       setIsPlacingOrder(false);
     }

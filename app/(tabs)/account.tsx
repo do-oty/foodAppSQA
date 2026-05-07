@@ -1,14 +1,24 @@
 import { FontAwesome } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function AccountTabScreen() {
   const router = useRouter();
   const { user, isAuthenticated, logout, isLoading, refreshUser } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
+  const [unreadNotifs, setUnreadNotifs] = useState(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      AsyncStorage.getItem('unread_notifs').then(val => {
+        setUnreadNotifs(val === '0' ? 0 : 1);
+      });
+    }, [])
+  );
 
   const handleLogout = async () => {
     await logout();
@@ -78,7 +88,7 @@ export default function AccountTabScreen() {
               { icon: 'map-marker', label: 'Saved Addresses', route: '/addresses' },
               { icon: 'list-alt', label: 'Order History', route: '/orders' },
               { icon: 'heart-o', label: 'Favorites', route: null },
-              { icon: 'bell-o', label: 'Notifications', route: null },
+              { icon: 'bell-o', label: 'Notifications', route: '/notifications' },
               { icon: 'cog', label: 'Settings', route: null },
             ].map((item) => (
               <Pressable
@@ -89,6 +99,11 @@ export default function AccountTabScreen() {
                   <FontAwesome name={item.icon as any} size={15} color="#7C3AED" />
                 </View>
                 <Text className="ml-3 flex-1 font-inter text-base text-violet-900">{item.label}</Text>
+                {item.label === 'Notifications' && unreadNotifs > 0 && (
+                  <View className="mr-2 h-5 w-5 items-center justify-center rounded-full bg-violet-600">
+                    <Text className="font-inter-bold text-[10px] text-white">{unreadNotifs}</Text>
+                  </View>
+                )}
                 <FontAwesome name="chevron-right" size={14} color="#A78BFA" />
               </Pressable>
             ))}

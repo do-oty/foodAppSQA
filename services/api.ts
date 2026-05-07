@@ -356,8 +356,9 @@ class FoodApiClient {
   }
 
   async setDefaultAddress(id: string): Promise<ApiResponse<ApiAddress>> {
-    return this.request<ApiAddress>(`/addresses/${id}/set-default`, {
+    return this.request<ApiAddress>(`/addresses/${id}`, {
       method: 'PATCH',
+      body: JSON.stringify({ is_default: true }),
     });
   }
 

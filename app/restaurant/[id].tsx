@@ -6,11 +6,13 @@ import { Animated, Pressable, ScrollView, Text, View, ActivityIndicator, Alert, 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api, ApiRestaurant, ApiMenuItem, ApiFavorite, extractArray } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
+import { useAlert } from '../../components/ui/custom-alert';
 
 export default function RestaurantDetailScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { isAuthenticated } = useAuth();
+  const { showAlert } = useAlert();
   
   const [restaurant, setRestaurant] = useState<ApiRestaurant | null>(null);
   const [menuItems, setMenuItems] = useState<ApiMenuItem[]>([]);
@@ -67,10 +69,14 @@ export default function RestaurantDetailScreen() {
   const toggleFavorite = async (restaurantId?: string, menuItemId?: string) => {
     console.log('toggleFavorite called with:', { restaurantId, menuItemId });
     if (!isAuthenticated) {
-      Alert.alert('Login Required', 'Please log in to save your favorite restaurants and dishes.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Log In', onPress: () => router.push('/auth') }
-      ]);
+      showAlert({
+        title: 'Login Required',
+        message: 'Please log in to save your favorite restaurants and dishes.',
+        type: 'info',
+        showCancel: true,
+        confirmText: 'Log In',
+        onConfirm: () => router.push('/auth'),
+      });
       return;
     }
     const id = (restaurantId || menuItemId)!;
@@ -95,7 +101,11 @@ export default function RestaurantDetailScreen() {
       }
     } catch (err: any) {
       console.error('Favorite toggle failed:', err);
-      Alert.alert('Error', err?.message || 'Failed to update favorites. Please try again.');
+      showAlert({
+        title: 'Error',
+        message: err?.message || 'Failed to update favorites. Please try again.',
+        type: 'error'
+      });
       fetchFavorites();
     }
   };
@@ -109,10 +119,14 @@ export default function RestaurantDetailScreen() {
 
   const handleAddToCart = async (item: ApiMenuItem) => {
     if (!isAuthenticated) {
-      Alert.alert('Login Required', 'Please log in to add items to your cart.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Log In', onPress: () => router.push('/auth') }
-      ]);
+      showAlert({
+        title: 'Login Required',
+        message: 'Please log in to add items to your cart.',
+        type: 'info',
+        showCancel: true,
+        confirmText: 'Log In',
+        onConfirm: () => router.push('/auth'),
+      });
       return;
     }
     
@@ -127,7 +141,11 @@ export default function RestaurantDetailScreen() {
       });
       showToast(`${qty}× ${item.name} added!`);
     } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Could not add to cart.');
+      showAlert({
+        title: 'Error',
+        message: err?.message || 'Could not add to cart.',
+        type: 'error'
+      });
     } finally {
       setAddingToCart(null);
     }

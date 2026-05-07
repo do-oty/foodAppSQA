@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api, ApiAddress, extractArray } from '../services/api';
+import { useAlert } from '../components/ui/custom-alert';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -45,6 +46,7 @@ export default function SavedAddressesScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { showAlert } = useAlert();
 
   // New address form state
   const [label, setLabel] = useState('Home');
@@ -117,7 +119,7 @@ export default function SavedAddressesScreen() {
 
   const handleAddAddress = async () => {
     if (!streetAddress || !city || !state) {
-      Alert.alert('Error', 'Please fill in street, city, and state.');
+      showAlert({ title: 'Error', message: 'Please fill in street, city, and state.', type: 'warning' });
       return;
     }
     setIsSubmitting(true);
@@ -137,7 +139,7 @@ export default function SavedAddressesScreen() {
       closeSheet();
       loadAddresses();
     } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Failed to add address.');
+      showAlert({ title: 'Error', message: err?.message || 'Failed to add address.', type: 'error' });
     } finally {
       setIsSubmitting(false);
     }
@@ -148,30 +150,26 @@ export default function SavedAddressesScreen() {
       await api.setDefaultAddress(id);
       loadAddresses();
     } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Failed to set default address.');
+      showAlert({ title: 'Error', message: err?.message || 'Failed to set default address.', type: 'error' });
     }
   };
 
   const handleDelete = async (id: string) => {
-    Alert.alert(
-      'Delete Address',
-      'Are you sure you want to remove this address?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await api.deleteAddress(id);
-              loadAddresses();
-            } catch (err: any) {
-              Alert.alert('Error', err?.message || 'Failed to delete address.');
-            }
-          }
+    showAlert({
+      title: 'Delete Address',
+      message: 'Are you sure you want to remove this address?',
+      type: 'warning',
+      showCancel: true,
+      confirmText: 'Delete',
+      onConfirm: async () => {
+        try {
+          await api.deleteAddress(id);
+          loadAddresses();
+        } catch (err: any) {
+          showAlert({ title: 'Error', message: err?.message || 'Failed to delete address.', type: 'error' });
         }
-      ]
-    );
+      }
+    });
   };
 
   const provinceList = sortedProvinces.map((p) => p.name);
@@ -346,7 +344,7 @@ export default function SavedAddressesScreen() {
                     <Pressable
                       onPress={() => {
                         if (!state) {
-                          Alert.alert('Notice', 'Please select a province first.');
+                          showAlert({ title: 'Notice', message: 'Please select a province first.', type: 'info' });
                           return;
                         }
                         setShowCityOptions(!showCityOptions);

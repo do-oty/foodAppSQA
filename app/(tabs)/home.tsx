@@ -3,12 +3,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, Modal, PanResponder, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
+import { Animated, Dimensions, Modal, PanResponder, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 import { api, ApiCategory, ApiRestaurant, extractArray, ApiAddress } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
+import { useAlert } from '../../components/ui/custom-alert';
 import { StatusBar } from 'expo-status-bar';
 
 const FALLBACK_TAGS = ['Burger', 'Milktea', 'Pizza', 'Sushi', 'Pasta', 'Sisig', 'Halo-halo'];
@@ -138,7 +139,9 @@ export default function HomeTabScreen() {
   const [hasActiveOrder, setHasActiveOrder] = useState(false);
   const [panelVisible, setPanelVisible] = useState(false);
   const { isAuthenticated } = useAuth();
+  const { showAlert } = useAlert();
   const [cartCount, setCartCount] = useState(0);
+  const [isLoadingAddress, setIsLoadingAddress] = useState(true);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
   // Favorites API disabled (no endpoint available)
@@ -150,10 +153,14 @@ export default function HomeTabScreen() {
   const toggleFavorite = async (restaurantId?: string, menuItemId?: string) => {
     console.log('toggleFavorite called with:', { restaurantId, menuItemId });
     if (!isAuthenticated) {
-      Alert.alert('Login Required', 'Please log in to save your favorite restaurants and dishes.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Log In', onPress: () => router.push('/auth') }
-      ]);
+      showAlert({
+        title: 'Login Required',
+        message: 'Please log in to save your favorite restaurants and dishes.',
+        type: 'info',
+        showCancel: true,
+        confirmText: 'Log In',
+        onConfirm: () => router.push('/auth'),
+      });
       return;
     }
     const id = (restaurantId || menuItemId)!;
@@ -180,11 +187,11 @@ export default function HomeTabScreen() {
         console.log('Adding favorite:', data);
         const res = await api.addFavorite(data as any);
         console.log('Favorite added response:', res);
-        Alert.alert('Success', 'Added to favorites!');
+        showAlert({ title: 'Success', message: 'Added to favorites!', type: 'success' });
       }
     } catch (err: any) {
       console.error('Favorite toggle failed:', err);
-      Alert.alert('Error', err?.message || 'Failed to update favorites. Please try again.');
+      showAlert({ title: 'Error', message: err?.message || 'Failed to update favorites. Please try again.', type: 'error' });
       fetchFavorites(); // Revert on error
     }
   };
@@ -226,7 +233,7 @@ export default function HomeTabScreen() {
   const handleSaveAddress = async () => {
     const { label, street_address, city, state, postal_code } = addressForm;
     if (!street_address.trim() || !city.trim() || !state.trim()) {
-      Alert.alert('Missing Info', 'Please fill in street, city, and state.');
+      showAlert({ title: 'Missing Info', message: 'Please fill in street, city, and state.', type: 'warning' });
       return;
     }
     try {
@@ -238,7 +245,7 @@ export default function HomeTabScreen() {
       setIsAddingAddress(false);
       setRefreshTrigger(t => t + 1);
     } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Could not save address.');
+      showAlert({ title: 'Error', message: err?.message || 'Could not save address.', type: 'error' });
     }
   };
 
@@ -406,6 +413,54 @@ export default function HomeTabScreen() {
     }, [isAuthenticated])
   );
 
+  // 1. Fetch Address FIRST
+  useEffect(() => {
+    let isActive = true;
+    const fetchAddress = async () => {
+      if (!isAuthenticated) {
+        if (isActive) {
+          setAddress('GUEST ACCOUNT');
+          setAddressSubtitle('Sign in to set location');
+          setIsLoadingAddress(false);
+        }
+        return;
+      }
+      setIsLoadingAddress(true);
+      try {
+        const result = await api.getAddresses();
+        const addrs = extractArray(result);
+        if (isActive) setSavedAddresses(addrs);
+        const defaultAddr = addrs.find((a: any) => a.is_default) || addrs[0];
+        if (isActive) {
+          if (defaultAddr) {
+            const displayStreet = defaultAddr.street_address || defaultAddr.city || 'Saved Address';
+            setAddress(displayStreet.toUpperCase());
+            setAddressSubtitle(`${defaultAddr.city}${defaultAddr.state ? `, ${defaultAddr.state}` : ''}`);
+          } else {
+            setAddress('SET YOUR LOCATION');
+            setAddressSubtitle('Tap to add address');
+          }
+        }
+      } catch (err: any) {
+        console.error('Failed to fetch address:', err);
+        if (isActive) {
+          if (err?.message?.includes('404')) {
+            setAddress('SET YOUR LOCATION');
+            setAddressSubtitle('Tap to add address');
+          } else {
+            setAddress('LOCATION UNAVAILABLE');
+            setAddressSubtitle('Check your connection');
+          }
+        }
+      } finally {
+        if (isActive) setIsLoadingAddress(false);
+      }
+    };
+    fetchAddress();
+    return () => { isActive = false; };
+  }, [isAuthenticated, refreshTrigger]);
+
+  // 2. Other Data
   useEffect(() => {
     let isActive = true;
     const fetchCategories = async () => {
@@ -430,23 +485,16 @@ export default function HomeTabScreen() {
     setIsLoadingMainMenu(true);
     setMainMenuError(null);
     try {
-      console.log('[HOME] Calling api.getRestaurants() with no params...');
-      const result = await api.getRestaurants(); // NO params — search/filter done client-side
-      console.log('[HOME] getRestaurants raw response:', result);
+      const result = await api.getRestaurants();
       const newRestaurants = extractArray(result);
-      console.log('[HOME] Restaurants count:', newRestaurants.length, newRestaurants.map((r:any) => r.name));
-
       if (newRestaurants.length === 0) {
-        console.warn('[HOME] No restaurants returned!');
         setMainMenuItems([]);
         setRestaurants([]);
         return;
       }
-
       const menuRequests = newRestaurants.map(r =>
         api.getMenu(r.id).then(m => {
           const items = extractArray(m);
-          console.log(`[HOME] Menu "${r.name}": ${items.length} items`);
           return items.map((i: any) => ({
             ...i,
             restaurant_id: r.id,
@@ -454,24 +502,20 @@ export default function HomeTabScreen() {
             restaurant_rating: r.average_rating,
             delivery_fee: r.delivery_fee
           }));
-        }).catch((e) => { console.warn(`[HOME] Menu failed for ${r.name}:`, e?.message); return []; })
+        }).catch(() => [])
       );
-
       const menuResults = await Promise.all(menuRequests);
       const newItems = menuResults.flat().filter(i => i.is_available !== false);
-      console.log('[HOME] Total menu items loaded:', newItems.length);
       setMainMenuItems(newItems);
       setRestaurants(newRestaurants);
     } catch (err: any) {
-      console.error('[HOME] fetchMainMenuItems CATCH:', err?.message);
       setMainMenuError('Could not load menu. Pull down to retry.');
     } finally {
-      console.log('[HOME] fetchMainMenuItems DONE');
       setIsLoadingMainMenu(false);
       setIsLoadingMoreFood(false);
       setRefreshing(false);
     }
-  }, []); // no deps — only fetches once on mount and on manual refresh
+  }, []);
 
   useEffect(() => {
     fetchMainMenuItems();
@@ -485,44 +529,29 @@ export default function HomeTabScreen() {
     if (!activeTag || activeTag === 'All') return mainMenuItems;
     const tag = activeTag.toLowerCase();
     const tagId = apiTags.find(t => t.name.toLowerCase() === tag)?.id;
-    
     return mainMenuItems.filter(item => {
       const catName = (item.category_name || '').toLowerCase();
       const name = (item.name || '').toLowerCase();
-      const desc = (item.description || '').toLowerCase();
-      
-      return catName.includes(tag) || 
-             (tagId && (item as any).category_id === tagId) ||
-             name.includes(tag) ||
-             desc.includes(tag);
+      return catName.includes(tag) || (tagId && (item as any).category_id === tagId) || name.includes(tag);
     });
   }, [mainMenuItems, activeTag, apiTags]);
 
   const filteredRestaurants = useMemo(() => {
     if (!activeTag || activeTag === 'All') return restaurants.slice(0, 8);
     const tag = activeTag.toLowerCase();
-    
     return restaurants.filter(r => {
       const cuisines = (r.cuisine_type || []).map(c => c.toLowerCase());
       const name = (r.name || '').toLowerCase();
-      const desc = (r.description || '').toLowerCase();
-      
-      return cuisines.some(c => c.includes(tag)) || 
-             name.includes(tag) || 
-             desc.includes(tag);
+      return cuisines.some(c => c.includes(tag)) || name.includes(tag);
     }).slice(0, 8);
   }, [restaurants, activeTag]);
 
   const orderAgainItems = useMemo(() => {
-    return [...filteredMenuItems]
-      .sort((a, b) => (b.restaurant_rating ?? 0) - (a.restaurant_rating ?? 0))
-      .slice(0, 6);
+    return [...filteredMenuItems].sort((a, b) => (b.restaurant_rating ?? 0) - (a.restaurant_rating ?? 0)).slice(0, 6);
   }, [filteredMenuItems]);
 
   const discoverMoreItems = useMemo(() => {
-    return [...filteredMenuItems]
-      .sort((a, b) => (a.delivery_fee ?? 0) - (b.delivery_fee ?? 0))
-      .slice(0, 6);
+    return [...filteredMenuItems].sort((a, b) => (a.delivery_fee ?? 0) - (b.delivery_fee ?? 0)).slice(0, 6);
   }, [filteredMenuItems]);
 
   const visibleFoodItems = useMemo(() => filteredMenuItems.slice(0, visibleFoodCount), [filteredMenuItems, visibleFoodCount]);
@@ -534,9 +563,7 @@ export default function HomeTabScreen() {
     const { contentOffset, contentSize, layoutMeasurement } = nativeEvent;
     setShowTopButton(contentOffset.y > 300);
     const isNearBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - 300;
-    
     if (!isNearBottom || isLoadingMoreFood) return;
-    
     if (visibleFoodCount < mainMenuItems.length) {
       setIsLoadingMoreFood(true);
       setTimeout(() => {
@@ -547,49 +574,6 @@ export default function HomeTabScreen() {
   };
 
   const stickyIndices = [1];
-
-  useEffect(() => {
-    let isActive = true;
-    const fetchAddress = async () => {
-      if (!isAuthenticated) {
-        if (isActive) {
-          setAddress('GUEST ACCOUNT');
-          setAddressSubtitle('Sign in to set location');
-        }
-        return;
-      }
-      try {
-        const result = await api.getAddresses();
-        const addrs = extractArray(result);
-        if (isActive) setSavedAddresses(addrs);
-        const defaultAddr = addrs.find((a: any) => a.is_default) || addrs[0];
-        if (isActive) {
-          if (defaultAddr) {
-            const displayStreet = defaultAddr.street_address || defaultAddr.city || 'Saved Address';
-            setAddress(displayStreet.toUpperCase());
-            setAddressSubtitle(`${defaultAddr.city}${defaultAddr.state ? `, ${defaultAddr.state}` : ''}`);
-          } else {
-            setAddress('SET YOUR LOCATION');
-            setAddressSubtitle('Tap to add address');
-          }
-        }
-      } catch (err: any) {
-        console.error('Failed to fetch address:', err);
-        if (isActive) {
-          // Graceful handling for 404/Empty
-          if (err?.message?.includes('404')) {
-            setAddress('SET YOUR LOCATION');
-            setAddressSubtitle('Tap to add address');
-          } else {
-            setAddress('LOCATION UNAVAILABLE');
-            setAddressSubtitle('Check your connection');
-          }
-        }
-      }
-    };
-    fetchAddress();
-    return () => { isActive = false; };
-  }, [isAuthenticated, refreshTrigger]);
 
   return (
     <View className="flex-1 bg-white">
@@ -605,7 +589,7 @@ export default function HomeTabScreen() {
           <View className="items-center">
             <View className="w-full flex-row items-center justify-center">
               <FontAwesome name="map-marker" size={15} color="#FFFFFF" />
-              {address === 'Loading address...' ? (
+              {isLoadingAddress ? (
                 <View className="ml-2 py-1">
                   <ShimmerBox width={150} height={18} borderRadius={4} style={{ backgroundColor: '#A78BFA' }} />
                 </View>
@@ -615,7 +599,7 @@ export default function HomeTabScreen() {
                 </Text>
               )}
             </View>
-            {address === 'Loading address...' ? (
+            {isLoadingAddress ? (
               <View className="mt-1">
                 <ShimmerBox width={100} height={12} borderRadius={4} style={{ backgroundColor: '#A78BFA' }} />
               </View>
@@ -645,7 +629,7 @@ export default function HomeTabScreen() {
                 style={{ position: 'relative' }}>
                 <FontAwesome name="shopping-basket" size={18} color="#7C3AED" />
                 {cartCount > 0 && (
-                  <View className="absolute top-1.5 right-1.5 h-4 w-4 items-center justify-center rounded-full bg-red-500">
+                  <View className="absolute -top-1 -right-1 h-5 w-5 items-center justify-center rounded-full bg-red-500 border-2 border-white">
                     <Text className="font-inter-bold text-[9px] text-white">{cartCount}</Text>
                   </View>
                 )}
