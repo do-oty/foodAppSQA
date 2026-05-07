@@ -11,6 +11,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { api, ApiCategory, ApiRestaurant, extractArray } from '../../services/api';
 import { StatusBar } from 'expo-status-bar';
+import { useAlert } from '../../components/ui/custom-alert';
+import { useRouter } from 'expo-router';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 type PanelType = 'filter' | 'sort' | 'offers' | null;
@@ -132,6 +134,8 @@ function FilterSheet({
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function SearchTabScreen() {
   const { isAuthenticated } = useAuth();
+  const { showAlert } = useAlert();
+  const router = useRouter();
   const [query, setQuery] = useState('');
   const [restaurants, setRestaurants] = useState<ApiRestaurant[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -248,73 +252,89 @@ export default function SearchTabScreen() {
   // Note: selectedOffer/selectedSort/selectedFilter are applied client-side only (not sent to API)
 
   const doSearch = async (sQuery: string) => {
-    console.log('[SEARCH] doSearch called with:', JSON.stringify(sQuery));
+    const trimmedQuery = sQuery.trim();
+    console.log('[SEARCH] doSearch called with:', JSON.stringify(trimmedQuery), 'Categories:', activeCategories);
     
     // Allow searching if there's a query OR categories selected
-    if (!sQuery.trim() && activeCategories.length === 0) {
+    if (!trimmedQuery && activeCategories.length === 0) {
       setRestaurants([]);
       setMenuItems([]);
       setHasSearched(false);
       return;
     }
+
     setIsLoading(true);
     setHasSearched(true);
+    
     try {
-      // Fetch ALL restaurants with NO params (parameterized calls return empty from this backend)
-      console.log('[SEARCH] Fetching all restaurants (no params)...');
-      const res = await api.getRestaurants();
-      console.log('[SEARCH] Raw response:', res);
+      // 1. Fetch Restaurants
+      // Always pass parameters to the API. Combine query and categories if needed.
+      const searchParts = [];
+      if (trimmedQuery) searchParts.push(trimmedQuery);
+      if (activeCategories.length > 0) searchParts.push(...activeCategories);
+      const combinedSearch = searchParts.join(' ');
+
+      console.log(`[SEARCH] Fetching restaurants with combined search: "${combinedSearch}"...`);
+      const res = await api.getRestaurants({ search: combinedSearch || undefined });
+      console.log('[SEARCH] API response:', res);
+      
       const allRestaurants = extractArray(res);
-      console.log('[SEARCH] Total restaurants:', allRestaurants.length, allRestaurants.map((r: any) => r.name));
+      console.log('[SEARCH] Processing', allRestaurants.length, 'restaurants for filtering...');
 
-      if (allRestaurants.length === 0) {
-        console.warn('[SEARCH] No restaurants from API at all');
-        setRestaurants([]);
-        setMenuItems([]);
-        return;
-      }
-
-      // Filter restaurants by name client-side
-      const nq = sQuery.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      // Filter restaurants client-side by name/desc/cuisine as a refinement
+      const nq = trimmedQuery.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       const nameMatches = allRestaurants.filter((r: any) => {
+        if (!nq) return true; // if no query, all are matches
         const name = (r.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         const desc = (r.description || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         const cuisine = (r.cuisine_type || []).join(' ').toLowerCase();
         return name.includes(nq) || desc.includes(nq) || cuisine.includes(nq);
       });
-      console.log('[SEARCH] Restaurant name matches:', nameMatches.length);
+      
+      console.log('[SEARCH] Final restaurant matches:', nameMatches.length);
       setRestaurants(nameMatches);
 
-      // Fetch menus for ALL restaurants (cap at 15) to find matching menu items
+      // 2. Fetch Menu Items (via individual restaurant menus)
+      // Since there's no global menu search API, we fetch menus for the top matched restaurants
       const toFetch = allRestaurants.slice(0, 15);
-      console.log('[SEARCH] Fetching menus for', toFetch.length, 'restaurants...');
-      const menuReqs = toFetch.map((r: any) =>
-        api.getMenu(r.id).then(m => {
-          const items = extractArray(m);
-          console.log(`[SEARCH]   "${r.name}": ${items.length} items`);
-          return items.map((item: any) => ({
-            ...item, restaurant_id: r.id, restaurant_name: r.name, delivery_fee: r.delivery_fee
-          }));
-        }).catch((e: any) => { console.warn(`[SEARCH]   Menu failed for ${r.name}:`, e?.message); return []; })
-      );
-      const menus = await Promise.all(menuReqs);
-      const allMenuItems = menus.flat();
-      console.log('[SEARCH] Total menu items:', allMenuItems.length);
+      if (toFetch.length > 0) {
+        console.log('[SEARCH] Fetching menus for', toFetch.length, 'restaurants to find item matches...');
+        const menuReqs = toFetch.map((r: any) =>
+          api.getMenu(r.id).then(m => {
+            const items = extractArray(m);
+            return items.map((item: any) => ({
+              ...item, restaurant_id: r.id, restaurant_name: r.name, delivery_fee: r.delivery_fee
+            }));
+          }).catch((e: any) => { console.warn(`[SEARCH] Menu failed for ${r.name}:`, e?.message); return []; })
+        );
+        
+        const menus = await Promise.all(menuReqs);
+        const allMenuItems = menus.flat();
+        
+        // Filter menu items client-side by query
+        const matchedItems = allMenuItems.filter((m: any) => {
+          if (!nq) return true;
+          const name = (m.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          const desc = (m.description || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          return name.includes(nq) || desc.includes(nq);
+        });
+        
+        console.log('[SEARCH] Matching menu items:', matchedItems.length);
+        setMenuItems(matchedItems);
+      } else {
+        setMenuItems([]);
+      }
 
-      // Filter menu items client-side by query
-      const matched = allMenuItems.filter((m: any) => {
-        const name = (m.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        const desc = (m.description || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        return name.includes(nq) || desc.includes(nq);
-      });
-      console.log('[SEARCH] Matching menu items:', matched.length, matched.map((m: any) => m.name));
-      setMenuItems(matched);
-    } catch (err) {
-      console.error('[SEARCH] doSearch CATCH:', err);
+    } catch (err: any) {
+      console.error('[SEARCH] doSearch error:', err);
       setRestaurants([]);
       setMenuItems([]);
+      showAlert({
+        title: 'Search Error',
+        message: err?.message || 'Something went wrong while searching. The server might be waking up—please try again in a few seconds.',
+        type: 'error'
+      });
     } finally {
-      console.log('[SEARCH] doSearch DONE');
       setIsLoading(false);
       setRefreshing(false);
     }

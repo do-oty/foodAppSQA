@@ -5,9 +5,12 @@ import { Platform } from 'react-native';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowAlert: true, // legacy but kept for older versions
     shouldPlaySound: true,
     shouldSetBadge: true,
+    // Modern replacements
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 

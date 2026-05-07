@@ -162,11 +162,8 @@ class FoodApiClient {
     await this.clearToken();
   }
 
-  private async request<T>(
-    endpoint: string,
-    options: RequestInit & { skipAuth?: boolean } = {},
-    isFormData = false
-  ): Promise<ApiResponse<T>> {
+  private async request<T>(endpoint: string, options: any = {}, retries = 2): Promise<T> {
+    const isFormData = options.body instanceof FormData;
     const url = `${API_BASE_URL}${endpoint}`;
     const headers: Record<string, string> = isFormData ? {} : { 'Content-Type': 'application/json' };
 
@@ -190,6 +187,11 @@ class FoodApiClient {
       clearTimeout(timeout);
 
       if (!response.ok) {
+        if (retries > 0 && (response.status >= 500 || response.status === 408)) {
+          console.log(`[API] Server error ${response.status}, retrying ${endpoint}... (${retries} left)`);
+          await new Promise(r => setTimeout(r, 800));
+          return this.request<T>(endpoint, options, retries - 1);
+        }
         const errorData = await response.json().catch(() => ({}));
         console.error(`API Error Details [${response.status}]:`, JSON.stringify(errorData, null, 2));
         const err = new Error(errorData.error || errorData.message || `API Error: ${response.status}`);
@@ -201,6 +203,11 @@ class FoodApiClient {
       return response.json();
     } catch (err: any) {
       clearTimeout(timeout);
+      if (retries > 0 && err?.name !== 'AbortError') {
+        console.log(`[API] Request failed, retrying ${endpoint}... (${retries} left)`);
+        await new Promise(r => setTimeout(r, 800));
+        return this.request<T>(endpoint, options, retries - 1);
+      }
       if (err?.name === 'AbortError') {
         throw new Error('Request timed out. The server may be waking up — please try again.');
       }
@@ -349,6 +356,12 @@ class FoodApiClient {
     return { success: true, data: undefined as any };
   }
 
+  async clearCart(): Promise<ApiResponse<void>> {
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    await AsyncStorage.removeItem('local_cart');
+    return { success: true, data: undefined as any };
+  }
+
   // ── Addresses ─────────────────────────────────────────────────────────────
 
   async getAddresses(): Promise<ApiResponse<ApiAddress[]>> {
@@ -398,6 +411,41 @@ class FoodApiClient {
 
   async uploadImage(formData: FormData): Promise<ApiResponse<{ url: string }>> {
     return this.request<{ url: string }>('/upload/image', { method: 'POST', body: formData }, true);
+  }
+
+  // ── Orders ────────────────────────────────────────────────────────────────
+
+  async createOrder(data: {
+    restaurant_id: string;
+    delivery_address_id: string;
+    payment_method: string;
+    items: Array<{
+      menu_item_id: string;
+      quantity: number;
+      selected_options?: Record<string, any>;
+    }>;
+  }): Promise<ApiResponse<any>> {
+    return this.request<any>('/orders', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getMyOrders(params?: { status?: string; page?: number; limit?: number }): Promise<ApiResponse<any[]>> {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    
+    const qs = query.toString();
+    return this.request<any[]>(`/orders/my-orders${qs ? `?${qs}` : ''}`);
+  }
+
+  async updateOrderStatus(id: string, status: string): Promise<ApiResponse<any>> {
+    return this.request<any>(`/orders/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
   }
 }
 

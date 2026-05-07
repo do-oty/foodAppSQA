@@ -76,30 +76,33 @@ export default function CheckoutScreen() {
 
     setIsPlacingOrder(true);
     try {
-      // Fake order creation & save to local storage
-      const newOrder = {
-        id: Math.random().toString(36).substring(7),
-        date: new Date().toISOString(),
-        items: items.map(i => ({ name: i.menu_item?.name, quantity: i.quantity, price: i.menu_item?.price })),
-        total: total,
-        status: 'pending', // pending -> in progress -> delivered
-        address: addresses.find(a => a.id === addressId)?.street_address || 'Your Address'
+      const selectedAddressObj = addresses.find(a => a.id === addressId);
+      
+      const orderData = {
+        restaurant_id: items[0].restaurant_id || items[0].menu_item?.restaurant_id || '',
+        delivery_address_id: addressId,
+        street_address: selectedAddressObj ? `${selectedAddressObj.street_address}, ${selectedAddressObj.city}` : 'Unknown Address',
+        payment_method: paymentMethod,
+        items: items.map(i => ({
+          menu_item_id: i.menu_item_id || i.menu_item?.id || '',
+          quantity: i.quantity,
+        }))
       };
-      
-      const prevOrders = JSON.parse(await AsyncStorage.getItem('user_orders') || '[]');
-      await AsyncStorage.setItem('user_orders', JSON.stringify([newOrder, ...prevOrders]));
-      
-      // Set active tracking order
-      await AsyncStorage.setItem('active_tracking_order', JSON.stringify(newOrder));
 
-      await Promise.all(items.map(i => api.removeFromCart(i.id || i.menu_item_id || '').catch(() => {})));
+      const res = await api.createOrder(orderData);
+      const newOrder = res.data || { ...orderData, id: 'NEW', status: 'pending' };
+      
+      await AsyncStorage.setItem('active_tracking_order', JSON.stringify(newOrder));
+      await api.clearCart();
 
       showAlert({ 
         title: 'Order Placed!', 
         message: 'Your food is on the way!', 
         type: 'success',
         confirmText: 'Track Order',
-        onConfirm: () => { router.dismissAll(); router.replace('/(tabs)/home'); }
+        onConfirm: () => { 
+          router.replace('/(tabs)/home');
+        }
       });
     } catch (err: any) {
       showAlert({ title: 'Checkout Failed', message: err?.message || 'Could not place order.', type: 'error' });
@@ -256,9 +259,11 @@ export default function CheckoutScreen() {
                   key={a.id} 
                   onPress={() => { setAddressId(a.id); setShowAddressSheet(false); }}
                   className={`mb-3 flex-row items-center justify-between rounded-2xl border p-4 ${addressId === a.id ? 'border-violet-600 bg-violet-50' : 'border-violet-100 bg-white'}`}>
-                  <View className="flex-1">
+                  <View className="flex-1 pr-4">
                     <Text className="font-inter-bold text-base text-violet-900">{a.label}</Text>
-                    <Text className="font-inter text-sm text-violet-500">{a.street_address}, {a.city}</Text>
+                    <Text className="font-inter-light text-[11px] text-gray-500" numberOfLines={1}>
+                      <FontAwesome name="map-marker" size={10} color="#D1D5DB" /> {a.street_address}, {a.city}
+                    </Text>
                   </View>
                   {addressId === a.id && <FontAwesome name="check" size={16} color="#7C3AED" />}
                 </Pressable>

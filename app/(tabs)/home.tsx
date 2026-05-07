@@ -414,160 +414,99 @@ export default function HomeTabScreen() {
     }, [isAuthenticated])
   );
 
-  // 1. Fetch Address FIRST
-  useEffect(() => {
-    let isActive = true;
-    const fetchAddress = async () => {
-      if (!isAuthenticated) {
-        if (isActive) {
-          setAddress('GUEST ACCOUNT');
-          setAddressSubtitle('Sign in to set location');
-          setIsLoadingAddress(false);
-        }
-        return;
-      }
-      setIsLoadingAddress(true);
-      try {
-        const result = await api.getAddresses();
-        const addrs = extractArray(result);
-        if (isActive) setSavedAddresses(addrs);
-        const defaultAddr = addrs.find((a: any) => a.is_default) || addrs[0];
-        if (isActive) {
-          if (defaultAddr) {
-            const displayStreet = defaultAddr.street_address || defaultAddr.city || 'Saved Address';
-            setAddress(displayStreet.toUpperCase());
-            setAddressSubtitle(`${defaultAddr.city}${defaultAddr.state ? `, ${defaultAddr.state}` : ''}`);
-          } else {
-            setAddress('SET YOUR LOCATION');
-            setAddressSubtitle('Tap to add address');
-          }
-        }
-      } catch (err: any) {
-        console.error('Failed to fetch address:', err);
-        if (isActive) {
-          if (err?.message?.includes('404')) {
-            setAddress('SET YOUR LOCATION');
-            setAddressSubtitle('Tap to add address');
-          } else {
-            setAddress('LOCATION UNAVAILABLE');
-            setAddressSubtitle('Check your connection');
-          }
-        }
-      } finally {
-        if (isActive) setIsLoadingAddress(false);
-      }
-    };
-    fetchAddress();
-    return () => { isActive = false; };
-  }, [isAuthenticated, refreshTrigger]);
+  const isFetchingRef = useRef(false);
 
-  // 2. Other Data
   useEffect(() => {
     let isActive = true;
-    const fetchCategories = async () => {
-      try {
-        const result = await api.getCategories();
-        const categories: ApiCategory[] = extractArray(result)
-          .map((c: any) => ({ id: String(c?.id ?? ''), name: String(c?.name ?? ''), icon_url: c?.icon_url ?? null }))
-          .filter((c: ApiCategory) => c.id && c.name);
-        
-        categories.unshift({ id: 'all', name: 'All', icon_url: null });
-        if (isActive) setApiTags(categories);
-      } catch {
-        if (isActive) setApiTags([{ id: 'all', name: 'All', icon_url: null }]);
-      }
-    };
-    fetchCategories();
+    api.getCategories().then(res => {
+      const categories = extractArray(res).map((c: any) => ({
+        id: String(c.id),
+        name: String(c.name),
+        icon_url: c.icon_url
+      }));
+      categories.unshift({ id: 'all', name: 'All', icon_url: null });
+      if (isActive) setApiTags(categories);
+    }).catch(() => {
+      if (isActive) setApiTags([{ id: 'all', name: 'All', icon_url: null }]);
+    });
     return () => { isActive = false; };
   }, []);
 
-  const isFetchingRef = useRef(false);
-
-  const fetchMainMenuItems = useCallback(async () => {
-    if (isFetchingRef.current) {
-      console.log('[HOME] fetchMainMenuItems already in progress, skipping');
-      return;
-    }
+  const loadPageData = useCallback(async (isRefresh = false) => {
+    if (isFetchingRef.current) return;
     isFetchingRef.current = true;
-    console.log('[HOME] fetchMainMenuItems START');
     
-    // Only show skeleton if we have NO data yet
-    const isFirstLoad = mainMenuItems.length === 0;
-    if (isFirstLoad) {
+    if (isRefresh || mainMenuItems.length === 0) {
       setIsLoadingMainMenu(true);
+      setIsLoadingAddress(true);
     }
     
-    setMainMenuError(null);
     try {
-      const result = await api.getRestaurants();
-      const newRestaurants = extractArray(result);
-      console.log('[HOME] Restaurants fetched:', newRestaurants.length);
-      
-      if (newRestaurants.length === 0) {
-        console.log('[HOME] No restaurants found in API response');
-        // Only clear state if it's the first load. Otherwise, keep old data (flaky API protection)
-        if (isFirstLoad) {
-          setMainMenuItems([]);
-          setRestaurants([]);
-        } else {
-          console.log('[HOME] Preserving existing data due to empty response');
-        }
-        return;
+      // Fetch everything in parallel - Always pass search param if activeTag is set
+      console.log('[HOME] Fetching data... Tag:', activeTag);
+      const [addrRes, restRes] = await Promise.all([
+        isAuthenticated ? api.getAddresses().catch(() => ({ success: false, data: [] })) : Promise.resolve({ success: true, data: [] }),
+        api.getRestaurants({ search: activeTag || undefined }).catch(() => ({ success: false, data: [] }))
+      ]);
+
+      // 1. Handle Address
+      const addrs = extractArray<ApiAddress>(addrRes);
+      setSavedAddresses(addrs);
+      const defaultAddr = addrs.find(a => a.is_default) || addrs[0];
+      if (defaultAddr) {
+        setAddress((defaultAddr.street_address || defaultAddr.city || 'Saved Address').toUpperCase());
+        setAddressSubtitle(`${defaultAddr.city}${defaultAddr.state ? `, ${defaultAddr.state}` : ''}`);
+      } else if (!isAuthenticated) {
+        setAddress('GUEST ACCOUNT');
+        setAddressSubtitle('Sign in to set location');
+      } else {
+        setAddress('SET YOUR LOCATION');
+        setAddressSubtitle('Tap to add address');
       }
-      
-      const menuRequests = newRestaurants.map(r =>
-        api.getMenu(r.id).then(m => {
-          const items = extractArray(m);
-          return items.map((i: any) => ({
+      setIsLoadingAddress(false);
+
+      // 2. Handle Restaurants & Menus
+      const newRestaurants = extractArray<ApiRestaurant>(restRes);
+      if (newRestaurants.length > 0) {
+        const menuReqs = newRestaurants.map(r =>
+          api.getMenu(r.id).then(m => extractArray(m).map((i: any) => ({
             ...i,
             restaurant_id: r.id,
             restaurant_name: r.name,
             restaurant_rating: r.average_rating || r.rating,
             delivery_fee: r.delivery_fee
-          }));
-        }).catch(err => {
-          console.error(`[HOME] Failed to fetch menu for restaurant ${r.id}:`, err);
-          return [];
-        })
-      );
-      
-      const menuResults = await Promise.all(menuRequests);
-      const newItems = menuResults.flat().filter(i => i.is_available !== false);
-      console.log('[HOME] Total menu items fetched:', newItems.length);
-      
-      setMainMenuItems(newItems);
-      setRestaurants(newRestaurants);
-    } catch (err: any) {
-      console.error('[HOME] fetchMainMenuItems ERROR:', err);
-      if (isFirstLoad) {
-        setMainMenuError('Could not load menu. Pull down to retry.');
+          }))).catch(() => [])
+        );
+        const menuResults = await Promise.all(menuReqs);
+        setMainMenuItems(menuResults.flat().filter(i => i.is_available !== false));
+        setRestaurants(newRestaurants);
       }
+    } catch (err: any) {
+      console.error('[HOME] loadPageData Error:', err);
+      if (mainMenuItems.length === 0) setMainMenuError('Failed to load data.');
+      showAlert({
+        title: 'Connection Issue',
+        message: err?.message || 'Failed to load restaurants. The server might be waking up—please try again.',
+        type: 'error'
+      });
     } finally {
       isFetchingRef.current = false;
       setIsLoadingMainMenu(false);
-      setIsLoadingMoreFood(false);
+      setIsLoadingAddress(false);
       setRefreshing(false);
-      console.log('[HOME] fetchMainMenuItems FINISHED');
     }
-  }, [mainMenuItems.length, mainMenuError]);
+  }, [isAuthenticated, mainMenuItems.length, activeTag]);
 
-  // 3. Main Data Fetching
   const isFocused = useIsFocused();
-  const [focusCount, setFocusCount] = useState(0);
 
+  // Handle Focus
   useEffect(() => {
     if (isFocused) {
-      setFocusCount(prev => prev + 1);
+      // Brief delay to ensure API token is loaded from storage if app just opened
+      const timer = setTimeout(() => loadPageData(), 150);
+      return () => clearTimeout(timer);
     }
-  }, [isFocused]);
-
-  useEffect(() => {
-    // This will run on mount (focusCount 1) and every subsequent focus
-    if (focusCount > 0) {
-      console.log('[HOME] Focus detected, triggering fetch. Count:', focusCount);
-      fetchMainMenuItems();
-    }
-  }, [focusCount, refreshTrigger, fetchMainMenuItems]);
+  }, [isFocused, refreshTrigger, loadPageData]);
 
   useEffect(() => {
     setVisibleFoodCount(6);
