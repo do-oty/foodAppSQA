@@ -12,6 +12,8 @@
     "production": {}
   },
   "submit": {
+    "development": {},
+    "preview": {},
     "production": {}
   }
 }
