@@ -329,7 +329,7 @@ export default function RestaurantDetailScreen() {
         style={[
           {
             position: 'absolute',
-            bottom: 100,
+            bottom: 200,
             alignSelf: 'center',
             backgroundColor: '#4C1D95',
             borderRadius: 24,
