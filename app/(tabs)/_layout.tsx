@@ -83,24 +83,30 @@ export default function TabsLayout() {
     // Sync with API
     try {
       await api.updateOrderStatus(activeOrder.id, nextStatus);
-    } catch (err) {
-      console.error('Failed to sync status with API:', err);
-    }
-    
-    if (nextStatus === 'delivered') {
-      // Sync with AsyncStorage for cross-tab availability (without manual history backup)
-      await AsyncStorage.removeItem('active_tracking_order');
-      setActiveOrder(null);
-      closeTracker();
       
-      showAlert({ title: 'Delivered!', message: 'Your order has arrived.', type: 'success' });
-      await sendLocalNotification(notifTitle, notifBody);
-    } else {
-      await AsyncStorage.setItem('active_tracking_order', JSON.stringify(updatedOrder));
-      setActiveOrder(updatedOrder);
-      if (notifTitle) await sendLocalNotification(notifTitle, notifBody);
+      if (nextStatus === 'delivered') {
+        // Sync with AsyncStorage for cross-tab availability (without manual history backup)
+        await AsyncStorage.removeItem('active_tracking_order');
+        setActiveOrder(null);
+        closeTracker();
+        
+        showAlert({ title: 'Delivered!', message: 'Your order has arrived.', type: 'success' });
+        await sendLocalNotification(notifTitle, notifBody);
+      } else {
+        await AsyncStorage.setItem('active_tracking_order', JSON.stringify(updatedOrder));
+        setActiveOrder(updatedOrder);
+        if (notifTitle) await sendLocalNotification(notifTitle, notifBody);
+      }
+    } catch (err: any) {
+      console.error('Failed to sync status with API:', err);
+      showAlert({ 
+        title: 'Sync Error', 
+        message: err?.message || 'Failed to update status on server. Please try again.', 
+        type: 'error' 
+      });
+    } finally {
+      setIsUpdatingState(false);
     }
-    setIsUpdatingState(false);
   };
 
   const [unreadNotifs, setUnreadNotifs] = useState(0);
