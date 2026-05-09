@@ -46,8 +46,11 @@ export default function TabsLayout() {
     return () => clearInterval(interval);
   }, []);
 
+  const [isUpdatingState, setIsUpdatingState] = useState(false);
+
   const advanceOrderState = async () => {
-    if (!activeOrder) return;
+    if (!activeOrder || isUpdatingState) return;
+    setIsUpdatingState(true);
     
     let nextStatus = activeOrder.status;
     let notifTitle = '';
@@ -97,6 +100,7 @@ export default function TabsLayout() {
       setActiveOrder(updatedOrder);
       if (notifTitle) await sendLocalNotification(notifTitle, notifBody);
     }
+    setIsUpdatingState(false);
   };
 
   const [unreadNotifs, setUnreadNotifs] = useState(0);
@@ -144,7 +148,7 @@ export default function TabsLayout() {
       {activeOrder && (
         <Pressable 
           onPress={openTracker}
-          style={{ position: 'absolute', bottom: 110, right: 16 }}
+          style={{ position: 'absolute', bottom: 110, left: 16 }}
           className="h-14 w-14 items-center justify-center rounded-full bg-violet-600 shadow-lg shadow-violet-900/30">
           <FontAwesome name="motorcycle" size={24} color="white" />
           <View className="absolute -top-1 -right-1 h-4 w-4 items-center justify-center rounded-full bg-red-500">
@@ -172,8 +176,10 @@ export default function TabsLayout() {
               shadowOpacity: 0.1,
               shadowRadius: 10,
             }}>
-            <View className="flex-row items-center justify-between border-b border-gray-100 p-4">
-              <Text className="font-inter-bold text-xl text-violet-900">Track Order #{String(activeOrder?.id || '').slice(0, 8).toUpperCase()}</Text>
+            <View className="flex-row items-center justify-between border-b border-gray-100 px-4 pb-4 pt-5">
+              <Text className="font-inter-bold text-lg text-violet-900 flex-1 pr-2" numberOfLines={1}>
+                Track Order #{String(activeOrder?.id || '').slice(0, 8).toUpperCase()}
+              </Text>
               <Pressable onPress={closeTracker} className="h-8 w-8 items-center justify-center rounded-full bg-gray-100">
                 <FontAwesome name="close" size={16} color="#6B7280" />
               </Pressable>

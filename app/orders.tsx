@@ -128,14 +128,14 @@ export default function OrderHistoryScreen() {
               </View>
 
               <View className="my-3 rounded-2xl bg-violet-50/50 border border-violet-50 p-3">
-                {o.items && o.items.length > 0 ? (
-                  o.items.map((item: any, i: number) => (
+                {((o.items && o.items.length > 0) || (o.order_items && o.order_items.length > 0)) ? (
+                  [...(o.items || []), ...(o.order_items || [])].map((item: any, i: number) => (
                     <Text key={i} className="font-inter text-sm text-violet-800">
                       <Text className="font-inter-bold">{item.quantity} ×</Text> {item.menu_item?.name || item.name || 'Food Item'}
                     </Text>
                   ))
                 ) : (
-                  <Text className="font-inter-light text-xs text-violet-400">View items in order details</Text>
+                  <Text className="font-inter-light text-xs text-violet-400">Items list unavailable</Text>
                 )}
               </View>
 

@@ -65,14 +65,38 @@ export default function SavedAddressesScreen() {
   const loadAddresses = useCallback(async () => {
     setIsLoading(true);
     try {
+      // 1. Get current user to know our ID
+      const userRes = await api.me();
+      const currentUserId = userRes.data?.id;
+
+      // 2. Get addresses
       const res = await api.getAddresses();
-      setAddresses(extractArray(res));
-    } catch (err) {
-      console.error(err);
+      if (res.success === false) {
+        throw new Error(res.error || 'Failed to load addresses');
+      }
+      
+      const allAddresses = extractArray(res);
+      
+      // 3. Filter client-side if the API is leaking other users' addresses
+      if (currentUserId) {
+        const myAddresses = allAddresses.filter((addr: any) => 
+          addr.user_id === currentUserId || !addr.user_id
+        );
+        setAddresses(myAddresses);
+      } else {
+        setAddresses(allAddresses);
+      }
+    } catch (err: any) {
+      console.error('Failed to load addresses:', err);
+      showAlert({
+        title: 'Error',
+        message: err?.message || 'Could not fetch your saved addresses. Please try again.',
+        type: 'error'
+      });
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [showAlert]);
 
   useEffect(() => {
     loadAddresses();
