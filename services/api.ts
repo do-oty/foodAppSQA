@@ -160,6 +160,7 @@ class FoodApiClient {
 
   async logout() {
     await this.clearToken();
+    await this.clearCart();
   }
 
   private async request<T>(endpoint: string, options: any = {}, retries = 3): Promise<T> {

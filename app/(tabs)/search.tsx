@@ -275,10 +275,18 @@ export default function SearchTabScreen() {
       const combinedSearch = searchParts.join(' ');
 
       console.log(`[SEARCH] Fetching restaurants with combined search: "${combinedSearch}"...`);
-      const res = await api.getRestaurants({ search: combinedSearch || undefined });
+      let res = await api.getRestaurants({ search: combinedSearch || undefined });
       console.log('[SEARCH] API response:', res);
       
-      const allRestaurants = extractArray(res);
+      let allRestaurants = extractArray(res);
+      
+      // FALLBACK: If API search returned nothing but we have a query, fetch ALL and filter locally
+      if (allRestaurants.length === 0 && (trimmedQuery || activeCategories.length > 0)) {
+        console.log('[SEARCH] API search returned nothing. Falling back to fetching all restaurants for client-side search...');
+        const fallbackRes = await api.getRestaurants();
+        allRestaurants = extractArray(fallbackRes);
+      }
+
       console.log('[SEARCH] Processing', allRestaurants.length, 'restaurants for filtering...');
 
       // Filter restaurants client-side by name/desc/cuisine as a refinement
