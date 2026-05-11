@@ -433,6 +433,7 @@ export default function HomeTabScreen() {
   }, []);
 
   const loadPageData = useCallback(async (isRefresh = false) => {
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
     
@@ -453,21 +454,31 @@ export default function HomeTabScreen() {
       const addrs = extractArray<ApiAddress>(addrRes);
       setSavedAddresses(addrs);
       const defaultAddr = addrs.find(a => a.is_default) || addrs[0];
+      
       if (defaultAddr) {
         setAddress((defaultAddr.street_address || defaultAddr.city || 'Saved Address').toUpperCase());
         setAddressSubtitle(`${defaultAddr.city}${defaultAddr.state ? `, ${defaultAddr.state}` : ''}`);
+        // Cache the successful address
+        AsyncStorage.setItem('cached_address', JSON.stringify(defaultAddr));
       } else if (!isAuthenticated) {
         setAddress('GUEST ACCOUNT');
         setAddressSubtitle('Sign in to set location');
       } else {
-        setAddress('SET YOUR LOCATION');
-        setAddressSubtitle('Tap to add address');
+        // Try loading address from cache if API returned empty
+        const cachedAddr = await AsyncStorage.getItem('cached_address');
+        if (cachedAddr) {
+          const parsedAddr = JSON.parse(cachedAddr);
+          setAddress((parsedAddr.street_address || parsedAddr.city || 'Saved Address').toUpperCase());
+          setAddressSubtitle(`${parsedAddr.city}${parsedAddr.state ? `, ${parsedAddr.state}` : ''}`);
+        } else {
+          setAddress('SET YOUR LOCATION');
+          setAddressSubtitle('Tap to add address');
+        }
       }
       setIsLoadingAddress(false);
 
       // 2. Handle Restaurants & Menus
       const newRestaurants = extractArray<ApiRestaurant>(restRes);
-      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
 
       if (newRestaurants.length > 0) {
         const menuReqs = newRestaurants.map(r =>
@@ -500,6 +511,8 @@ export default function HomeTabScreen() {
           setRestaurants(JSON.parse(cachedRest));
           setMainMenuItems(JSON.parse(cachedMenu));
           console.log('[HOME] Loaded from cache because API returned empty!');
+        } else {
+          setMainMenuError('The server is currently waking up and no cached data is available. Please pull to refresh in a few seconds.');
         }
       }
     } catch (err: any) {

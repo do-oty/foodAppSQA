@@ -2,6 +2,26 @@
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
+## Project Overview
+
+This is a premium React Native food delivery application built with Expo. It features a rich, aesthetic UI with dynamic carousels, infinite scrolling marquees for reviews, and custom animated modals. It integrates with a Supabase-backed API for user authentication, cart management, and order placement.
+
+## Features & Notable Capabilities
+
+- **Infinite Scrolling Marquee**: A custom review ticker on the restaurant screen that loops infinitely.
+- **Dynamic Randomization**: Feeds and restaurants are randomized on load to keep the app feeling fresh, while maintaining working category filters.
+- **Resilient Offline Cache**: Automatically falls back to locally cached data if the sleeping Vercel API returns empty arrays.
+- **Custom Bottom Sheets**: Handcrafted animated bottom sheets with fading shadows for a native feel.
+
+## Current Limitations & Known Constraints
+
+Due to backend constraints and the current project scope, the following features are not fully functional or are simulated:
+
+1. **Real-time Notifications**: There is no live backend notification server. Notifications are simulated locally after specific actions (like placing an order).
+2. **Real-time Order Tracking**: Live GPS tracking is not supported by the backend. The order tracker modal is a UI simulation.
+3. **Review Creation via App**: The API strictly requires a verified delivery to allow creating reviews (returning 403 otherwise). Mass reviews were populated directly via SQL for testing.
+4. **Favorites Persistence**: The `/favorites` API endpoint is currently unavailable. Favorites work optimistically in the current session but do not persist across app restarts.
+
 ## Get started
 
 1. Install dependencies
@@ -48,3 +68,11 @@ Join our community of developers creating universal apps.
 
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
+## API Optimization & Resilience (Vercel Free Tier Workarounds)
+
+Due to the backend being hosted on a free Vercel instance, several optimizations were implemented to ensure a smooth user experience despite slow response times and cold starts:
+
+1. **Auto-Retry on Empty Lists**: If the API returns a success status but an empty array for lists (like `/restaurants`), the app automatically retries up to 3 times with linear backoff (1s, 2s, 3s) before giving up, as this usually indicates the database is still waking up.
+2. **AsyncStorage Caching Fallback**: Successful fetches for restaurants and menu items are cached locally. If the API fails to return data on subsequent loads, the app will automatically fall back to the cached data so users never see a blank screen.
+3. **Frontend-Only Filtering**: To prevent massive delays when tapping category tags, data filtering is performed in-memory on the frontend rather than making a new API request every time.
