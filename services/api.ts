@@ -16,6 +16,17 @@ export interface ApiAuthResponse {
   token: string;
 }
 
+export interface ApiNotification {
+  id: string;
+  user_id: string;
+  title: string;
+  message: string;
+  type: string;
+  data?: any;
+  is_read: boolean;
+  created_at: string;
+}
+
 export interface ApiRestaurant {
   id: string;
   name: string;
@@ -33,6 +44,20 @@ export interface ApiRestaurant {
   city: string;
   state?: string;
   delivery_time_min?: number;
+}
+
+export interface ApiReview {
+  id: string;
+  user_id: string;
+  restaurant_id: string;
+  order_id?: string | null;
+  rating: number;
+  comment: string;
+  created_at: string;
+  user?: {
+    full_name: string;
+    avatar_url: string | null;
+  };
 }
 
 export interface ApiMenuItem {
@@ -149,7 +174,7 @@ class FoodApiClient {
     }
     this.token = cleanToken;
     const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    AsyncStorage.setItem('auth_token', cleanToken).catch(err => console.error('Failed to save token:', err));
+    AsyncStorage.setItem('auth_token', cleanToken).catch((err: any) => console.error('Failed to save token:', err));
   }
 
   async clearToken() {
@@ -159,14 +184,33 @@ class FoodApiClient {
   }
 
   async logout() {
+    try {
+      await this.clearCart();
+    } catch (err) {
+      console.warn('Failed to clear cart on backend during logout:', err);
+    }
     await this.clearToken();
-    await this.clearCart();
+    
+    // Clear local notifications when switching accounts
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    await AsyncStorage.removeItem('local_notifications');
+    await AsyncStorage.setItem('unread_notifs', '0');
   }
 
-  private async request<T>(endpoint: string, options: any = {}, retries = 3): Promise<T> {
+  private async request<T>(endpoint: string, options: any = {}, retries = 3): Promise<ApiResponse<T>> {
     const isFormData = options.body instanceof FormData;
     const url = `${API_BASE_URL}${endpoint}`;
     const headers: Record<string, string> = isFormData ? {} : { 'Content-Type': 'application/json' };
+
+    if (!options.skipAuth && !this.token) {
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      const stored = await AsyncStorage.getItem('auth_token');
+      if (stored) {
+        let clean = stored;
+        if (clean.startsWith('"') && clean.endsWith('"')) clean = clean.slice(1, -1);
+        this.token = clean;
+      }
+    }
 
     if (!options.skipAuth && this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
@@ -327,62 +371,36 @@ class FoodApiClient {
     return this.request<ApiCategory[]>('/categories');
   }
 
-  // ── Cart (Simulated via AsyncStorage for robustness) ───────────
+  // ── Cart ──────────────────────────────────────────────────────────────────
 
   async getCart(): Promise<ApiResponse<ApiCart>> {
-    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    const cartStr = await AsyncStorage.getItem('local_cart');
-    const items = cartStr ? JSON.parse(cartStr) : [];
-    return { success: true, data: { id: 'local', user_id: 'local', items, total_amount: 0 } };
+    return this.request<ApiCart>('/cart');
   }
 
-  async addToCart(data: { menu_item_id: string; quantity: number; restaurant_id?: string; menu_item?: any }): Promise<ApiResponse<ApiCart>> {
-    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    const cartStr = await AsyncStorage.getItem('local_cart');
-    const items = cartStr ? JSON.parse(cartStr) : [];
-    
-    const existing = items.find((i: any) => i.menu_item_id === data.menu_item_id);
-    if (existing) {
-      existing.quantity += data.quantity;
-    } else {
-      items.push({
-        id: Math.random().toString(36).substring(7),
-        menu_item_id: data.menu_item_id,
-        quantity: data.quantity,
-        restaurant_id: data.restaurant_id,
-        menu_item: data.menu_item || { id: data.menu_item_id, name: 'Item', price: 0 }
-      });
-    }
-    await AsyncStorage.setItem('local_cart', JSON.stringify(items));
-    return { success: true, data: { id: 'local', user_id: 'local', items, total_amount: 0 } };
+  async addToCart(data: { menu_item_id: string; quantity: number; restaurant_id?: string; selected_options?: any }): Promise<ApiResponse<ApiCart>> {
+    return this.request<ApiCart>('/cart', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 
   async updateCartItem(id: string, quantity: number): Promise<ApiResponse<ApiCart>> {
-    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    const cartStr = await AsyncStorage.getItem('local_cart');
-    const items = cartStr ? JSON.parse(cartStr) : [];
-    
-    const item = items.find((i: any) => i.id === id || i.menu_item_id === id);
-    if (item) item.quantity = quantity;
-    
-    await AsyncStorage.setItem('local_cart', JSON.stringify(items));
-    return { success: true, data: { id: 'local', user_id: 'local', items, total_amount: 0 } };
+    return this.request<ApiCart>(`/cart/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ quantity }),
+    });
   }
 
   async removeFromCart(id: string): Promise<ApiResponse<void>> {
-    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    const cartStr = await AsyncStorage.getItem('local_cart');
-    let items = cartStr ? JSON.parse(cartStr) : [];
-    
-    items = items.filter((i: any) => i.id !== id && i.menu_item_id !== id);
-    await AsyncStorage.setItem('local_cart', JSON.stringify(items));
-    return { success: true, data: undefined as any };
+    return this.request<void>(`/cart/${id}`, {
+      method: 'DELETE',
+    });
   }
 
   async clearCart(): Promise<ApiResponse<void>> {
-    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    await AsyncStorage.removeItem('local_cart');
-    return { success: true, data: undefined as any };
+    return this.request<void>('/cart', {
+      method: 'DELETE',
+    });
   }
 
   // ── Addresses ─────────────────────────────────────────────────────────────
@@ -411,6 +429,87 @@ class FoodApiClient {
     });
   }
 
+  // ── Notifications (Simulated via AsyncStorage since no backend endpoint exists) ──
+
+  async getNotifications(): Promise<ApiResponse<ApiNotification[]>> {
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    const notifsStr = await AsyncStorage.getItem('local_notifications');
+    const items = notifsStr ? JSON.parse(notifsStr) : [];
+    return { success: true, data: items };
+  }
+
+  async markNotificationAsRead(id: string): Promise<ApiResponse<void>> {
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    const notifsStr = await AsyncStorage.getItem('local_notifications');
+    const items = notifsStr ? JSON.parse(notifsStr) : [];
+    
+    const item = items.find((n: any) => n.id === id);
+    if (item) item.is_read = true;
+    
+    await AsyncStorage.setItem('local_notifications', JSON.stringify(items));
+    return { success: true, data: undefined as any };
+  }
+
+  async addLocalNotification(title: string, message: string, type: string = 'info'): Promise<ApiResponse<ApiNotification>> {
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    const notifsStr = await AsyncStorage.getItem('local_notifications');
+    const items = notifsStr ? JSON.parse(notifsStr) : [];
+    
+    const newNotif: ApiNotification = {
+      id: Math.random().toString(36).substring(7),
+      user_id: 'local',
+      title,
+      message,
+      type,
+      is_read: false,
+      created_at: new Date().toISOString()
+    };
+    
+    items.unshift(newNotif); // Add to top
+    await AsyncStorage.setItem('local_notifications', JSON.stringify(items));
+
+    // Increment unread count for badges
+    const unreadStr = await AsyncStorage.getItem('unread_notifs');
+    const unread = unreadStr ? parseInt(unreadStr, 10) : 0;
+    await AsyncStorage.setItem('unread_notifs', (unread + 1).toString());
+
+    return { success: true, data: newNotif };
+  }
+
+  async deleteNotification(id: string): Promise<ApiResponse<void>> {
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    const notifsStr = await AsyncStorage.getItem('local_notifications');
+    const items = notifsStr ? JSON.parse(notifsStr) : [];
+    
+    const filtered = items.filter((n: any) => n.id !== id);
+    await AsyncStorage.setItem('local_notifications', JSON.stringify(filtered));
+    return { success: true, data: undefined as any };
+  }
+
+  async clearAllNotifications(): Promise<ApiResponse<void>> {
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    await AsyncStorage.removeItem('local_notifications');
+    return { success: true, data: undefined as any };
+  }
+
+  // ── Reviews ───────────────────────────────────────────────────────────────
+
+  async getReviews(restaurantId: string): Promise<ApiResponse<ApiReview[]>> {
+    return this.request<ApiReview[]>(`/reviews?restaurant_id=${restaurantId}`);
+  }
+
+  async createReview(data: {
+    restaurant_id: string;
+    rating: number;
+    comment: string;
+    order_id?: string;
+  }): Promise<ApiResponse<ApiReview>> {
+    return this.request<ApiReview>('/reviews', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   // ── Favorites ─────────────────────────────────────────────────────────────
 
   async getFavorites(): Promise<ApiResponse<ApiFavorite[]>> {
@@ -433,7 +532,7 @@ class FoodApiClient {
   // ── Image Uploads ─────────────────────────────────────────────────────────
 
   async uploadImage(formData: FormData): Promise<ApiResponse<{ url: string }>> {
-    return this.request<{ url: string }>('/upload/image', { method: 'POST', body: formData }, true);
+    return this.request<{ url: string }>('/upload/image', { method: 'POST', body: formData });
   }
 
   // ── Orders ────────────────────────────────────────────────────────────────

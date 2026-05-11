@@ -436,8 +436,8 @@ export default function HomeTabScreen() {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
     
-    if (isRefresh || mainMenuItems.length === 0) {
-      setIsLoadingMainMenu(true);
+    setIsLoadingMainMenu(true);
+    if (isRefresh || savedAddresses.length === 0) {
       setIsLoadingAddress(true);
     }
     
@@ -446,7 +446,7 @@ export default function HomeTabScreen() {
       console.log('[HOME] Fetching data... Tag:', activeTag);
       const [addrRes, restRes] = await Promise.all([
         isAuthenticated ? api.getAddresses().catch(() => ({ success: false, data: [] })) : Promise.resolve({ success: true, data: [] }),
-        api.getRestaurants({ search: activeTag || undefined }).catch(() => ({ success: false, data: [] }))
+        api.getRestaurants().catch(() => ({ success: false, data: [] }))
       ]);
 
       // 1. Handle Address
@@ -467,6 +467,8 @@ export default function HomeTabScreen() {
 
       // 2. Handle Restaurants & Menus
       const newRestaurants = extractArray<ApiRestaurant>(restRes);
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+
       if (newRestaurants.length > 0) {
         const menuReqs = newRestaurants.map(r =>
           api.getMenu(r.id).then(m => extractArray(m).map((i: any) => ({
@@ -478,8 +480,27 @@ export default function HomeTabScreen() {
           }))).catch(() => [])
         );
         const menuResults = await Promise.all(menuReqs);
-        setMainMenuItems(menuResults.flat().filter(i => i.is_available !== false));
-        setRestaurants(newRestaurants);
+        const flatMenu = menuResults.flat().filter(i => i.is_available !== false);
+        
+        const shuffledMenu = [...flatMenu].sort(() => 0.5 - Math.random());
+        const shuffledRest = [...newRestaurants].sort(() => 0.5 - Math.random());
+        
+        setMainMenuItems(shuffledMenu);
+        setRestaurants(shuffledRest);
+        
+        // Save to cache for flakey API fallback
+        AsyncStorage.setItem('cached_restaurants', JSON.stringify(shuffledRest));
+        AsyncStorage.setItem('cached_menu_items', JSON.stringify(shuffledMenu));
+      } else {
+        // Fallback to cache if API returns empty
+        const cachedRest = await AsyncStorage.getItem('cached_restaurants');
+        const cachedMenu = await AsyncStorage.getItem('cached_menu_items');
+        
+        if (cachedRest && cachedMenu) {
+          setRestaurants(JSON.parse(cachedRest));
+          setMainMenuItems(JSON.parse(cachedMenu));
+          console.log('[HOME] Loaded from cache because API returned empty!');
+        }
       }
     } catch (err: any) {
       console.error('[HOME] loadPageData Error:', err);
@@ -495,7 +516,7 @@ export default function HomeTabScreen() {
       setIsLoadingAddress(false);
       setRefreshing(false);
     }
-  }, [isAuthenticated, mainMenuItems.length, activeTag]);
+  }, [isAuthenticated]);
 
   const isFocused = useIsFocused();
 
@@ -514,50 +535,55 @@ export default function HomeTabScreen() {
 
   const filteredMenuItems = useMemo(() => {
     if (!mainMenuItems.length) return [];
-    if (!activeTag || activeTag === 'all' || activeTag === 'All') return mainMenuItems;
     
-    const tag = activeTag.toLowerCase();
-    const tagId = apiTags.find(t => t.name.toLowerCase() === tag)?.id;
+    let filtered = mainMenuItems;
+    if (activeTag && activeTag !== 'all' && activeTag !== 'All') {
+      const tag = activeTag.toLowerCase();
+      const tagId = apiTags.find(t => t.name.toLowerCase() === tag)?.id;
+      
+      filtered = mainMenuItems.filter(item => {
+        const catName = (item.category_name || '').toLowerCase();
+        const name = (item.name || '').toLowerCase();
+        const catIdMatch = tagId && String((item as any).category_id) === String(tagId);
+        return catName.includes(tag) || catIdMatch || name.includes(tag);
+      });
+      
+      if (filtered.length === 0) filtered = mainMenuItems;
+    }
     
-    const filtered = mainMenuItems.filter(item => {
-      const catName = (item.category_name || '').toLowerCase();
-      const name = (item.name || '').toLowerCase();
-      const catIdMatch = tagId && String((item as any).category_id) === String(tagId);
-      return catName.includes(tag) || catIdMatch || name.includes(tag);
-    });
-
-    // Fallback: If tag is selected but no items found, show all (avoids blank screen)
-    if (filtered.length === 0) return mainMenuItems;
-    return filtered;
+    return filtered; // Already randomized in state!
   }, [mainMenuItems, activeTag, apiTags]);
 
   const filteredRestaurants = useMemo(() => {
     if (!restaurants.length) return [];
-    if (!activeTag || activeTag === 'all' || activeTag === 'All') return restaurants.slice(0, 8);
     
-    const tag = activeTag.toLowerCase();
-    const filtered = restaurants.filter(r => {
-      const cuisines = (r.cuisine_type || []).map(c => c.toLowerCase());
-      const name = (r.name || '').toLowerCase();
-      return cuisines.some(c => c.includes(tag)) || name.includes(tag);
-    });
-
-    if (filtered.length === 0) return restaurants.slice(0, 8);
-    return filtered.slice(0, 8);
+    let filtered = restaurants;
+    if (activeTag && activeTag !== 'all' && activeTag !== 'All') {
+      const tag = activeTag.toLowerCase();
+      filtered = restaurants.filter(r => {
+        const cuisines = (r.cuisine_type || []).map(c => c.toLowerCase());
+        const name = (r.name || '').toLowerCase();
+        return cuisines.some(c => c.includes(tag)) || name.includes(tag);
+      });
+      
+      if (filtered.length === 0) filtered = restaurants;
+    }
+    
+    return [...filtered].slice(0, 8); // Already randomized in state!
   }, [restaurants, activeTag]);
 
   const orderAgainItems = useMemo(() => {
-    const sorted = [...filteredMenuItems].sort((a, b) => (b.restaurant_rating ?? 0) - (a.restaurant_rating ?? 0)).slice(0, 6);
-    console.log('[HOME-RENDER] filteredMenuItems count:', filteredMenuItems.length);
-    console.log('[HOME-RENDER] orderAgainItems count:', sorted.length);
-    return sorted;
+    // Randomize again to be different from discoverMore
+    const items = [...filteredMenuItems].sort(() => 0.5 - Math.random()).slice(0, 6);
+    console.log('[HOME-RENDER] orderAgainItems count:', items.length);
+    return items;
   }, [filteredMenuItems]);
 
   const discoverMoreItems = useMemo(() => {
-    const items = [...filteredMenuItems].sort(() => 0.5 - Math.random()).slice(0, 6);
+    const items = [...mainMenuItems].sort(() => 0.5 - Math.random()).slice(0, 6);
     console.log('[HOME-RENDER] discoverMoreItems count:', items.length);
     return items;
-  }, [filteredMenuItems]);
+  }, [mainMenuItems]);
 
   const visibleFoodItems = useMemo(() => {
     const items = filteredMenuItems.slice(0, visibleFoodCount);

@@ -114,7 +114,7 @@ export default function TabsLayout() {
   useEffect(() => {
     const checkUnread = async () => {
       const val = await AsyncStorage.getItem('unread_notifs');
-      setUnreadNotifs(val === '0' ? 0 : 1); // For demo, we just show a badge if there's unread
+      setUnreadNotifs(val ? parseInt(val, 10) : 0);
     };
     checkUnread();
     const interval = setInterval(checkUnread, 2000);
@@ -175,13 +175,9 @@ export default function TabsLayout() {
               backgroundColor: 'white',
               borderTopLeftRadius: 32,
               borderTopRightRadius: 32,
-              overflow: 'hidden',
-              elevation: 20,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: -4 },
-              shadowOpacity: 0.1,
-              shadowRadius: 10,
+              elevation: 0,
             }}>
+            <View style={{ flex: 1, borderTopLeftRadius: 32, borderTopRightRadius: 32, overflow: 'hidden' }}>
             <View className="flex-row items-center justify-between border-b border-gray-100 px-4 pb-4 pt-5">
               <Text className="font-inter-bold text-lg text-violet-900 flex-1 pr-2" numberOfLines={1}>
                 Track Order #{String(activeOrder?.id || '').slice(0, 8).toUpperCase()}
@@ -241,6 +237,7 @@ export default function TabsLayout() {
                 </Pressable>
               </View>
             </ScrollView>
+            </View>
           </Animated.View>
         </View>
       </Modal>

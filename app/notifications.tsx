@@ -1,40 +1,44 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, Pressable } from 'react-native';
+import { View, Text, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api, ApiNotification, extractArray } from '../services/api';
 
 export default function NotificationsScreen() {
   const router = useRouter();
-  const [notifications, setNotifications] = useState([
-    {
-      id: '1',
-      title: 'Order Delivered!',
-      message: 'Your order #1234 has been delivered. Enjoy!',
-      time: '2 mins ago',
-      type: 'success',
-      read: false
-    },
-    {
-      id: '2',
-      title: 'Promo Alert',
-      message: 'Get 50% off on your favorite pizza today.',
-      time: '1 hour ago',
-      type: 'info',
-      read: false
-    }
-  ]);
-
+  const [notifications, setNotifications] = useState<ApiNotification[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
 
+  const loadNotifications = async () => {
+    setIsLoading(true);
+    try {
+      const result = await api.getNotifications();
+      const items = extractArray(result);
+      setNotifications(items);
+      setUnreadCount(items.filter(n => !n.is_read).length);
+      await AsyncStorage.setItem('unread_notifs', '0');
+    } catch (err) {
+      console.error('[NOTIFICATIONS] Load failed:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    // Clear notifications badge when entering
-    AsyncStorage.getItem('unread_notifs').then(val => {
-      setUnreadCount(val === '0' ? 0 : 1);
-      AsyncStorage.setItem('unread_notifs', '0');
-    });
+    loadNotifications();
   }, []);
+
+  const formatTime = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+      return dateStr;
+    }
+  };
 
   return (
     <SafeAreaView className="flex-1 bg-white">
@@ -53,11 +57,40 @@ export default function NotificationsScreen() {
             </View>
           )}
         </View>
+        {notifications.length > 0 && (
+          <Pressable 
+            onPress={async () => {
+              await api.clearAllNotifications();
+              loadNotifications();
+            }}
+            className="ml-auto"
+          >
+            <Text className="font-inter-bold text-sm text-violet-600">Clear All</Text>
+          </Pressable>
+        )}
       </View>
 
       <ScrollView className="flex-1 px-6 pt-4">
-        {notifications.map((notif) => (
-          <View key={notif.id} className="mb-4 p-4 rounded-2xl border border-violet-100 bg-violet-50/50">
+        {isLoading && (
+          <View className="py-8 items-center">
+            <ActivityIndicator color="#7C3AED" size="large" />
+          </View>
+        )}
+
+        {!isLoading && notifications.length === 0 && (
+          <View className="py-12 items-center">
+            <View className="h-16 w-16 items-center justify-center rounded-full bg-violet-50 mb-4">
+              <FontAwesome name="bell-o" size={24} color="#A78BFA" />
+            </View>
+            <Text className="font-inter-bold text-base text-violet-900">No notifications yet</Text>
+            <Text className="mt-1 text-center font-inter-light text-sm text-violet-500">
+              We'll notify you when something important arrives!
+            </Text>
+          </View>
+        )}
+
+        {!isLoading && notifications.map((notif) => (
+          <View key={notif.id} className={`mb-4 p-4 rounded-2xl border ${notif.is_read ? 'border-violet-100 bg-white' : 'border-violet-200 bg-violet-50/50'}`}>
             <View className="flex-row items-start">
               <View className={`h-10 w-10 items-center justify-center rounded-full ${notif.type === 'success' ? 'bg-green-100' : 'bg-violet-100'}`}>
                 <FontAwesome 
@@ -69,8 +102,17 @@ export default function NotificationsScreen() {
               <View className="ml-4 flex-1">
                 <Text className="font-inter-bold text-base text-violet-900">{notif.title}</Text>
                 <Text className="mt-1 font-inter-light text-sm text-violet-500">{notif.message}</Text>
-                <Text className="mt-2 font-inter-light text-[10px] text-violet-400">{notif.time}</Text>
+                <Text className="mt-2 font-inter-light text-[10px] text-violet-400">{formatTime(notif.created_at)}</Text>
               </View>
+              <Pressable 
+                onPress={async () => {
+                  await api.deleteNotification(notif.id);
+                  loadNotifications();
+                }}
+                className="ml-2 h-8 w-8 items-center justify-center rounded-full bg-violet-50"
+              >
+                <FontAwesome name="trash" size={14} color="#EF4444" />
+              </Pressable>
             </View>
           </View>
         ))}
@@ -79,9 +121,11 @@ export default function NotificationsScreen() {
         <View className="mt-8 mb-12">
           <Text className="mb-4 font-inter-bold text-sm text-violet-400 uppercase tracking-widest text-center">Developer Tools</Text>
           <Pressable 
-            onPress={() => {
+            onPress={async () => {
               const { sendLocalNotification } = require('../services/notifications');
               sendLocalNotification('Exclusive Offer! 🍕', 'Get 50% OFF your next order with code FOOD50. Limited time only!');
+              await api.addLocalNotification('Exclusive Offer! 🍕', 'Get 50% OFF your next order with code FOOD50. Limited time only!', 'info');
+              loadNotifications();
             }}
             className="rounded-2xl border border-dashed border-green-300 bg-green-50 p-6 items-center">
             <View className="h-12 w-12 items-center justify-center rounded-full bg-green-100 mb-3">

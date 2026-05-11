@@ -29,6 +29,7 @@ export default function CheckoutScreen() {
   const [paymentMethod, setPaymentMethod] = useState('cash'); // 'cash', 'card', 'ewallet'
   const [promoCode, setPromoCode] = useState('');
   const [promoApplied, setPromoApplied] = useState(false);
+  const [promoPercentage, setPromoPercentage] = useState(0);
   
   useEffect(() => {
     const load = async () => {
@@ -54,15 +55,22 @@ export default function CheckoutScreen() {
 
   const subtotal = items.reduce((sum, item) => sum + (Number(item.menu_item?.price || 0) * item.quantity), 0);
   const deliveryFee = 50; 
-  const discount = promoApplied ? subtotal * 0.1 : 0; // 10% discount
+  const discount = subtotal * promoPercentage;
   const total = subtotal + deliveryFee - discount;
 
   const handleApplyPromo = () => {
-    if (promoCode.toUpperCase() === 'PROMO10') {
+    const code = promoCode.toUpperCase().trim();
+    if (code === 'PROMO10') {
       setPromoApplied(true);
+      setPromoPercentage(0.1);
       showAlert({ title: 'Success', message: '10% discount applied!', type: 'success' });
+    } else if (code === 'FOOD50') {
+      setPromoApplied(true);
+      setPromoPercentage(0.5);
+      showAlert({ title: 'Success', message: '50% discount applied!', type: 'success' });
     } else {
       setPromoApplied(false);
+      setPromoPercentage(0);
       showAlert({ title: 'Invalid', message: 'Promo code not found or expired.', type: 'warning' });
     }
   };
@@ -79,7 +87,7 @@ export default function CheckoutScreen() {
       const selectedAddressObj = addresses.find(a => a.id === addressId);
       
       const orderData = {
-        restaurant_id: items[0].restaurant_id || items[0].menu_item?.restaurant_id || '',
+        restaurant_id: items[0].menu_item?.restaurant_id || '',
         delivery_address_id: addressId,
         street_address: selectedAddressObj ? `${selectedAddressObj.street_address}, ${selectedAddressObj.city}` : 'Unknown Address',
         payment_method: paymentMethod,

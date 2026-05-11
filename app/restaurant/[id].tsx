@@ -2,9 +2,9 @@ import { FontAwesome } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Animated, Pressable, ScrollView, Text, View, ActivityIndicator, Alert, Dimensions } from 'react-native';
+import { Animated, Pressable, ScrollView, Text, View, ActivityIndicator, Alert, Dimensions, Easing } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { api, ApiRestaurant, ApiMenuItem, ApiFavorite, extractArray } from '../../services/api';
+import { api, ApiRestaurant, ApiMenuItem, ApiFavorite, ApiReview, extractArray } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
 import { useAlert } from '../../components/ui/custom-alert';
 
@@ -20,6 +20,10 @@ export default function RestaurantDetailScreen() {
   const [addingToCart, setAddingToCart] = useState<string | null>(null);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [reviews, setReviews] = useState<ApiReview[]>([]);
+  const [orderItemsMap, setOrderItemsMap] = useState<Record<string, any[]>>({});
+  const [showReviews, setShowReviews] = useState(true);
+  const marqueeAnim = useRef(new Animated.Value(0)).current;
   const [cartToast, setCartToast] = useState('');
   const toastAnim = useRef(new Animated.Value(0)).current;
 
@@ -43,13 +47,22 @@ export default function RestaurantDetailScreen() {
 
     const load = async () => {
       try {
-        const [res, menuRes] = await Promise.all([
+        const [res, menuRes, reviewsRes, ordersRes] = await Promise.all([
           api.getRestaurant(resId),
-          api.getMenu(resId)
+          api.getMenu(resId),
+          api.getReviews(resId),
+          api.getMyOrders().catch(() => ({ success: true, data: [] }))
         ]);
         setRestaurant(res.data);
         const menuItemsList = extractArray<ApiMenuItem>(menuRes);
         setMenuItems(menuItemsList);
+        setReviews(extractArray<ApiReview>(reviewsRes));
+        
+        const oMap: Record<string, any[]> = {};
+        extractArray(ordersRes).forEach((o: any) => {
+          oMap[o.id] = [...(o.items || []), ...(o.order_items || [])];
+        });
+        setOrderItemsMap(oMap);
         
         const q: Record<string, number> = {};
         menuItemsList.forEach((item) => {
@@ -65,6 +78,28 @@ export default function RestaurantDetailScreen() {
     load();
     fetchFavorites();
   }, [params.id, fetchFavorites]);
+
+  useEffect(() => {
+    if (!showReviews || reviews.length === 0) return;
+    
+    const totalWidth = reviews.length * 292; // 280 width + 12 gap
+    
+    marqueeAnim.setValue(0); // Reset to start
+    
+    const animation = Animated.loop(
+      Animated.timing(marqueeAnim, {
+        toValue: -totalWidth,
+        duration: reviews.length * 5000, // 5 seconds per item (slower)
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+      { iterations: -1 }
+    );
+    
+    animation.start();
+    
+    return () => animation.stop();
+  }, [showReviews, reviews]);
 
   const toggleFavorite = async (restaurantId?: string, menuItemId?: string) => {
     console.log('toggleFavorite called with:', { restaurantId, menuItemId });
@@ -176,6 +211,10 @@ export default function RestaurantDetailScreen() {
     );
   }
 
+  const calculatedRating = reviews.length > 0 
+    ? (reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1)
+    : null;
+
   return (
     <View className="flex-1 bg-white">
       {/* Back button overlay */}
@@ -217,12 +256,14 @@ export default function RestaurantDetailScreen() {
           )}
 
           <View className="mt-6 flex-row items-center gap-4">
-            <View className="flex-row items-center rounded-2xl bg-yellow-50 px-4 py-2 border border-yellow-100">
-              <FontAwesome name="star" size={14} color="#EAB308" />
-              <Text className="ml-2 font-inter-bold text-sm text-yellow-700">
-                {restaurant.average_rating?.toFixed(1) ?? 'New'}
-              </Text>
-            </View>
+            {(restaurant.average_rating || calculatedRating) && (
+              <View className="flex-row items-center rounded-2xl bg-yellow-50 px-4 py-2 border border-yellow-100">
+                <FontAwesome name="star" size={14} color="#EAB308" />
+                <Text className="ml-2 font-inter-bold text-sm text-yellow-700">
+                  {restaurant.average_rating ? restaurant.average_rating.toFixed(1) : calculatedRating}
+                </Text>
+              </View>
+            )}
             <View className="flex-row items-center rounded-2xl bg-violet-50 px-4 py-2 border border-violet-100">
               <FontAwesome name="motorcycle" size={14} color="#7C3AED" />
               <Text className="ml-2 font-inter-bold text-sm text-violet-700">
@@ -230,6 +271,82 @@ export default function RestaurantDetailScreen() {
               </Text>
             </View>
           </View>
+        </View>
+
+        {/* Reviews Carousel */}
+        <View className="px-6 pt-6">
+          <View className="flex-row items-center justify-between mb-4">
+            <View className="flex-row items-center gap-2">
+              <Text className="font-inter-bold text-xl text-violet-900">Reviews</Text>
+              <View className="rounded-full bg-violet-100 px-2 py-0.5">
+                <Text className="font-inter-bold text-[10px] text-violet-700">{reviews.length}</Text>
+              </View>
+            </View>
+            <Pressable onPress={() => setShowReviews(!showReviews)} className="flex-row items-center gap-1">
+              <Text className="font-inter-bold text-xs text-violet-600">
+                {showReviews ? 'Hide' : 'Show'}
+              </Text>
+              <FontAwesome name={showReviews ? 'angle-up' : 'angle-down'} size={14} color="#7C3AED" />
+            </Pressable>
+          </View>
+
+          {showReviews && (
+            reviews.length === 0 ? (
+              <View className="py-6 items-center bg-violet-50/50 rounded-2xl border border-violet-50">
+                <FontAwesome name="comment-o" size={24} color="#A78BFA" />
+                <Text className="mt-2 font-inter-light text-xs text-violet-400">No reviews yet.</Text>
+              </View>
+            ) : (
+              <View style={{ overflow: 'hidden' }} className="pb-2">
+                <Animated.View 
+                  style={{ 
+                    flexDirection: 'row', 
+                    gap: 12, 
+                    transform: [{ translateX: marqueeAnim }] 
+                  }}
+                >
+                  {[...reviews, ...reviews, ...reviews].map((review, index) => (
+                    <View key={`${review.id}-${index}`} style={{ width: 280 }} className="p-4 rounded-2xl border border-violet-50 bg-white shadow-sm shadow-violet-100/30">
+                      <View className="flex-row items-center justify-between">
+                        <View className="flex-row items-center">
+                          <View className="h-8 w-8 items-center justify-center rounded-full bg-violet-100">
+                            <Text className="font-inter-bold text-xs text-violet-700">
+                              {review.user?.full_name?.[0]?.toUpperCase() || '?'}
+                            </Text>
+                          </View>
+                          <View className="ml-3">
+                            <Text className="font-inter-bold text-sm text-violet-900">{review.user?.full_name || 'Anonymous'}</Text>
+                            <Text className="font-inter-light text-[10px] text-violet-400">
+                              {new Date(review.created_at).toLocaleDateString()}
+                            </Text>
+                          </View>
+                        </View>
+                        <View className="flex-row items-center rounded-full bg-yellow-50 px-3 py-1 border border-yellow-100">
+                          <FontAwesome name="star" size={10} color="#EAB308" />
+                          <Text className="ml-1 font-inter-bold text-xs text-yellow-700">{review.rating}</Text>
+                        </View>
+                      </View>
+
+                      {/* Ordered Items */}
+                      {review.order_id && orderItemsMap[review.order_id] && orderItemsMap[review.order_id].length > 0 && (
+                        <View className="mt-2 flex-row flex-wrap gap-1">
+                          {orderItemsMap[review.order_id].map((item: any, i: number) => (
+                            <View key={i} className="rounded-full bg-violet-50 px-2 py-0.5 border border-violet-100">
+                              <Text className="font-inter-bold text-[10px] text-violet-700">
+                                {item.quantity}× {item.menu_item?.name || item.name || 'Item'}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+
+                      <Text className="mt-3 font-inter-light text-sm text-violet-600" numberOfLines={2}>{review.comment}</Text>
+                    </View>
+                  ))}
+                </Animated.View>
+              </View>
+            )
+          )}
         </View>
 
         {/* Menu Items */}
@@ -308,6 +425,8 @@ export default function RestaurantDetailScreen() {
             ))
           )}
         </View>
+
+
       </ScrollView>
 
       {/* Floating View Cart Button */}

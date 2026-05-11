@@ -61,6 +61,14 @@ export async function registerForPushNotificationsAsync() {
 }
 
 export async function sendLocalNotification(title: string, body: string, data: any = {}) {
+  // Save to local storage so it appears in the Notifications screen
+  try {
+    const { api } = require('./api');
+    api.addLocalNotification(title, body, data?.type || 'info');
+  } catch (e) {
+    console.error('Failed to save notification to storage:', e);
+  }
+
   await Notifications.scheduleNotificationAsync({
     content: {
       title,

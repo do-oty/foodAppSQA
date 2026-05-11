@@ -15,7 +15,7 @@ export default function AccountTabScreen() {
   useFocusEffect(
     useCallback(() => {
       AsyncStorage.getItem('unread_notifs').then(val => {
-        setUnreadNotifs(val === '0' ? 0 : 1);
+        setUnreadNotifs(val ? parseInt(val, 10) : 0);
       });
     }, [])
   );

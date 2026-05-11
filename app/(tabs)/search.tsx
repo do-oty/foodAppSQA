@@ -137,6 +137,7 @@ export default function SearchTabScreen() {
   const { showAlert } = useAlert();
   const router = useRouter();
   const [query, setQuery] = useState('');
+  const fetchIdRef = useRef(0);
   const [restaurants, setRestaurants] = useState<ApiRestaurant[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -252,6 +253,7 @@ export default function SearchTabScreen() {
   // Note: selectedOffer/selectedSort/selectedFilter are applied client-side only (not sent to API)
 
   const doSearch = async (sQuery: string) => {
+    const currentFetchId = ++fetchIdRef.current;
     const trimmedQuery = sQuery.trim();
     console.log('[SEARCH] doSearch called with:', JSON.stringify(trimmedQuery), 'Categories:', activeCategories);
     
@@ -277,6 +279,11 @@ export default function SearchTabScreen() {
       console.log(`[SEARCH] Fetching restaurants with combined search: "${combinedSearch}"...`);
       let res = await api.getRestaurants({ search: combinedSearch || undefined });
       console.log('[SEARCH] API response:', res);
+      
+      if (currentFetchId !== fetchIdRef.current) {
+        console.log('[SEARCH] Ignoring outdated search results.');
+        return;
+      }
       
       let allRestaurants = extractArray(res);
       

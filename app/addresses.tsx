@@ -72,7 +72,7 @@ export default function SavedAddressesScreen() {
       // 2. Get addresses
       const res = await api.getAddresses();
       if (res.success === false) {
-        throw new Error(res.error || 'Failed to load addresses');
+        throw new Error(res.message || 'Failed to load addresses');
       }
       
       const allAddresses = extractArray(res);
@@ -155,6 +155,8 @@ export default function SavedAddressesScreen() {
         state,
         postal_code: postalCode,
         is_default: addresses.length === 0,
+        latitude: 14.5995, // Default Manila lat
+        longitude: 120.9842, // Default Manila lng
       });
       setStreetAddress('');
       setCity('');
